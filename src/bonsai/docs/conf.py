@@ -46,6 +46,8 @@ with open(os.path.join(cwd, "..", "..", "..", "VERSION"), "r") as f:
     release = f.read().strip()
 
 
+
+
 # -- General configuration ---------------------------------------------------
 
 # Add any Sphinx extension module names here, as strings. They can be

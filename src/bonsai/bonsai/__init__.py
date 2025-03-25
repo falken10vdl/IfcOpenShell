@@ -236,6 +236,7 @@ if IN_BLENDER:
         ifcopenshell.api.add_pre_listener("*", "action_logger", log_api)
 
         def register():
+            print("Bonsai registered first3")
             if platform.system() == "Windows":
                 clean_up_dlls_safe_links()
 
@@ -379,6 +380,7 @@ if IN_BLENDER:
                 return False
 
         def register():
+            print("Bonsai registered2")
             # Only show our error panel and nothing else in the scene tab
             for item_name in dir(bpy.types):
                 item = getattr(bpy.types, item_name)
