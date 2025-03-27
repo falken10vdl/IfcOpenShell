@@ -20,7 +20,7 @@ import ifcopenshell
 import ifcopenshell.guid
 import ifcopenshell.util.element
 import ifcopenshell.util.representation
-from typing import Any, Callable, Optional, Union, Literal, overload, Sequence
+from typing import Any, Callable, Optional, Union, Literal, overload, Sequence, Generator
 from collections import namedtuple
 
 
@@ -591,10 +591,16 @@ def get_types(type: ifcopenshell.entity_instance) -> list[ifcopenshell.entity_in
     return []
 
 
-def get_shape_aspects(element: ifcopenshell.entity_instance) -> list[ifcopenshell.entity_instance]:
+def get_shape_aspects(
+    element: ifcopenshell.entity_instance,
+    should_inherit: bool = True,
+) -> list[ifcopenshell.entity_instance]:
     """Get element's shape aspects.
 
     :param element: IfcProduct or IfcTypeProduct.
+    :param should_inherit: If True, the shape aspects of the element's type will be considered.
+        Useful in cases when IfcShapeAspects are assigned to the type's IfcRepresentationMap
+        instead of the element's IfcProductDefinitionShape.
     :return: The associated shape aspects of the element.
 
     Example:
@@ -607,7 +613,11 @@ def get_shape_aspects(element: ifcopenshell.entity_instance) -> list[ifcopenshel
 
     # IfcProduct
     if (representation := getattr(element, "Representation", ...)) != ...:
-        return representation.HasShapeAspects
+        shape_aspects: list[ifcopenshell.entity_instance] = []
+        if should_inherit and (element_type := get_type(element)):
+            shape_aspects.extend(get_shape_aspects(element_type))
+        shape_aspects.extend(representation.HasShapeAspects)
+        return shape_aspects
 
     if element.file.schema == "IFC2X3":
         return []
@@ -1710,3 +1720,27 @@ def has_property(product: ifcopenshell.entity_instance, property_name: str) -> b
         return True
     qtos = get_psets(product, qtos_only=True)
     return any(property_name in quantities.keys() for quantities in qtos.values())
+
+
+def get_openings(element: ifcopenshell.entity_instance) -> Generator[ifcopenshell.entity_instance, None, None]:
+    """Get element openings as IfcRelVoidsElements.
+
+    Use `.RelatedOpeningElement` to get the opening element.
+
+    :param element: IfcElement.
+    :return: Generator of IfcRelVoidsElements.
+    """
+    for element_rel in getattr(element, "HasOpenings", ()):
+        yield element_rel
+
+    if aggregate := get_aggregate(element):
+        yield from get_openings(aggregate)
+
+
+def has_openings(element: ifcopenshell.entity_instance) -> bool:
+    """Check if the element has openings.
+
+    :param element: IfcElement.
+    :return: True if element has openings.
+    """
+    return bool(next(get_openings(element), False))

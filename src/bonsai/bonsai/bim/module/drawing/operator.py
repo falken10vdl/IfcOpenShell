@@ -43,6 +43,7 @@ import bonsai.bim.module.drawing.svgwriter as svgwriter
 import bonsai.bim.module.drawing.annotation as annotation
 import bonsai.bim.module.drawing.sheeter as sheeter
 import bonsai.bim.export_ifc
+from bpy_extras.io_utils import ImportHelper
 from bonsai.bim.module.drawing.decoration import CutDecorator
 from bonsai.bim.module.drawing.data import DecoratorData, DrawingsData
 from typing import NamedTuple, List, Union, Optional, Literal
@@ -562,6 +563,112 @@ class CreateDrawing(bpy.types.Operator):
                 path.attrib["d"] = d
             group.append(g)
 
+    def generate_wall_layers(self, context: bpy.types.Context, root):
+        for el in root.findall(".//{http://www.w3.org/2000/svg}g[@{http://www.ifcopenshell.org/ns}guid]"):
+            if "projection" in el.get("class", "").split():
+                continue
+            element = self.get_element_by_guid(el.get("{http://www.ifcopenshell.org/ns}guid"))
+            if not (obj := tool.Ifc.get_object(element)):
+                continue
+            if not (material := ifcopenshell.util.element.get_material(element)):
+                continue
+            if material.is_a() not in ("IfcMaterialLayerSet", "IfcMaterialLayerSetUsage"):
+                continue
+
+            self.unit_scale = ifcopenshell.util.unit.calculate_unit_scale(tool.Ifc.get())
+
+            if material.is_a("IfcMaterialLayerSetUsage"):
+                usage = material
+                layer_set = material.ForLayerSet
+                offset = usage.OffsetFromReferenceLine * self.unit_scale
+                sense_factor = 1 if usage.DirectionSense == "POSITIVE" else -1
+            elif material.is_a("IfcMaterialLayerSet"):
+                usage = None
+                layer_set = material
+                offset = 0
+                sense_factor = 1
+
+            camera_matrix_i = context.scene.camera.matrix_world.inverted()
+
+            group = root.find("{http://www.w3.org/2000/svg}g")
+            raw_width, raw_height = self.get_camera_dimensions()
+            x_offset = raw_width / 2
+            y_offset = raw_height / 2
+            svg_scale = self.scale * 1000  # IFC is in meters, SVG is in mm
+
+            mesh = obj.data
+            bm = bmesh.new()
+            bm.from_mesh(mesh)
+
+            # Slice our mesh into a 2D drawing cut (2D is always easier)
+            camera_matrix = obj.matrix_world.inverted() @ context.scene.camera.matrix_world
+            plane_co = camera_matrix.translation
+            plane_no = camera_matrix.col[2].xyz
+            geom = bm.verts[:] + bm.edges[:] + bm.faces[:]
+            bmesh.ops.bisect_plane(
+                bm, geom=geom, dist=0.0001, plane_co=plane_co, plane_no=plane_no, clear_outer=True, clear_inner=True
+            )
+            bmesh.ops.remove_doubles(bm, verts=bm.verts, dist=0.000001)
+            bmesh.ops.triangle_fill(bm, use_dissolve=True, edges=bm.edges)
+
+            prev_co = None
+            if not usage:
+                sense_factor = 1  # Assume the extrusion vector points in the direction sense
+                no = tool.Drawing.get_extrusion_vector(element).normalized()
+                co = Vector((0.0, 0.0, offset))
+            elif usage.LayerSetDirection == "AXIS2":
+                co = Vector((0.0, offset, 0.0))
+                no = tool.Drawing.get_extrusion_vector(element).normalized()
+                no = no.cross(Vector([1.0, 0.0, 0.0]))
+            elif usage.LayerSetDirection == "AXIS3":
+                co = Vector((0.0, 0.0, offset))
+                no = tool.Drawing.get_extrusion_vector(element).normalized()
+                no = Vector([0.0, 0.0, 1.0])
+            elif usage.LayerSetDirection == "AXIS1":
+                co = Vector((0.0, 0.0, offset))
+                no = tool.Drawing.get_extrusion_vector(element).normalized()
+                no = Vector([1.0, 0.0, 0.0])
+            no *= sense_factor
+            last_i = len(layer_set.MaterialLayers) - 1
+            for i, layer in enumerate(layer_set.MaterialLayers):
+                prev_co = co.copy()
+                co += no * layer.LayerThickness * self.unit_scale
+
+                bm_fill = bm.copy()
+                if i != last_i:
+                    geom = bm_fill.verts[:] + bm_fill.edges[:] + bm_fill.faces[:]
+                    bmesh.ops.bisect_plane(bm_fill, geom=geom, dist=0.0001, plane_co=co, plane_no=no, clear_outer=True)
+                if i != 0:
+                    geom = bm_fill.verts[:] + bm_fill.edges[:] + bm_fill.faces[:]
+                    bmesh.ops.bisect_plane(
+                        bm_fill, geom=geom, dist=0.0001, plane_co=prev_co, plane_no=no, clear_inner=True
+                    )
+
+                bm_fill.verts.ensure_lookup_table()
+                bm_fill.edges.ensure_lookup_table()
+                verts = [tuple(obj.matrix_world @ v.co) for v in bm_fill.verts]
+                edges = [[v.index for v in e.verts] for e in bm_fill.edges]
+
+                g = etree.SubElement(root, "{http://www.w3.org/2000/svg}g")
+                g.attrib["{http://www.ifcopenshell.org/ns}guid"] = element.GlobalId
+                g.attrib["{http://www.ifcopenshell.org/ns}name"] = element.Name or ""
+                g.attrib["{http://www.ifcopenshell.org/ns}layer-id"] = str(layer.id())
+
+                lines = []
+                for edge in edges:
+                    start = [o for o in (camera_matrix_i @ Vector(verts[edge[0]])).xy]
+                    end = [o for o in (camera_matrix_i @ Vector(verts[edge[1]])).xy]
+                    coords = [start, end]
+                    d = " ".join(
+                        ["L{},{}".format((x_offset + p[0]) * svg_scale, (y_offset - p[1]) * svg_scale) for p in coords]
+                    )
+                    d = "M{}".format(d[1:])
+                    path = etree.SubElement(g, "{http://www.w3.org/2000/svg}path")
+                    path.attrib["d"] = d
+                group.append(g)
+
+            bm.free()
+
     def generate_freestyle_linework(self, context: bpy.types.Context) -> str | None:
         if not ifcopenshell.util.element.get_pset(self.drawing, "EPset_Drawing", "HasLinework"):
             return
@@ -769,10 +876,12 @@ class CreateDrawing(bpy.types.Operator):
         if self.camera.data.BIMCameraProperties.cut_mode == "BISECT":
             self.remove_cut_linework(root)
             self.generate_bisect_linework(context, root)
+            self.generate_wall_layers(context, root)
             self.merge_linework_and_add_metadata(root)
             self.move_elements_to_top(root)
         elif self.camera.data.BIMCameraProperties.cut_mode == "OPENCASCADE":
             self.move_projection_to_bottom(root)
+            self.generate_wall_layers(context, root)
             self.merge_linework_and_add_metadata(root)
             self.move_elements_to_top(root)
 
@@ -1101,7 +1210,7 @@ class CreateDrawing(bpy.types.Operator):
         # the style of the face when running tree.select_ray()
         # tree.enable_face_styles(True)
 
-    def get_svg_classes(self, element):
+    def get_svg_classes(self, element, layer=None):
         classes = [element.is_a()]
         material = ifcopenshell.util.element.get_material(element, should_skip_usage=True)
         material_name = ""
@@ -1113,7 +1222,13 @@ class CreateDrawing(bpy.types.Operator):
             material_name = tool.Drawing.canonicalise_class_name(material_name)
             classes.append(f"material-{material_name}")
         else:
-            classes.append(f"material-null")
+            classes.append("material-null")
+
+        if layer:
+            classes.append(layer.is_a())
+            material_name = layer.Material.Name or "null"
+            material_name = tool.Drawing.canonicalise_class_name(material_name)
+            classes.append(f"layer-material-{material_name}")
 
         for key in self.metadata:
             value = ifcopenshell.util.selector.get_element_value(element, key)
@@ -1152,6 +1267,23 @@ class CreateDrawing(bpy.types.Operator):
                 except:
                     continue
 
+    def get_element_by_id(self, step_id):
+        try:
+            step_id = int(step_id)
+        except:
+            return
+        try:
+            return tool.Ifc.get().by_id(step_id)
+        except:
+            props = tool.Project.get_project_props()
+            for link in props.links:
+                if link.name not in IfcStore.session_files:
+                    IfcStore.session_files[link.name] = ifcopenshell.open(link.name)
+                try:
+                    return IfcStore.session_files[link.name].by_id(step_id)
+                except:
+                    continue
+
     def remove_cut_linework(self, root):
         for el in root.findall(".//{http://www.w3.org/2000/svg}g[@{http://www.ifcopenshell.org/ns}guid]"):
             if "projection" not in el.get("class", "").split():
@@ -1163,15 +1295,15 @@ class CreateDrawing(bpy.types.Operator):
             join_criteria = join_criteria.split(",")
         else:
             # Drawing convention states that same objects classes with the same material are merged when cut.
-            join_criteria = ["class", "material.Name", "/Pset_.*Common/.Status", "EPset_Status.Status"]
+            join_criteria = ["class", "material.Name", "/Pset_.*Common/.Status", "EPset_Status.Status", "Material.Name"]
 
         group = root.find("{http://www.w3.org/2000/svg}g")
         joined_paths = {}
         self.is_manifold_cache = {}
 
-        ifc = tool.Ifc.get()
         for el in root.findall(".//{http://www.w3.org/2000/svg}g[@{http://www.ifcopenshell.org/ns}guid]"):
             element = self.get_element_by_guid(el.get("{http://www.ifcopenshell.org/ns}guid"))
+            layer = self.get_element_by_id(el.get("{http://www.ifcopenshell.org/ns}layer-id"))
 
             if "projection" in el.get("class", "").split():
                 classes = self.get_svg_classes(element)
@@ -1179,7 +1311,7 @@ class CreateDrawing(bpy.types.Operator):
                 el.set("class", " ".join(classes))
                 continue
             else:
-                classes = self.get_svg_classes(element)
+                classes = self.get_svg_classes(element, layer)
                 classes.append("cut")
                 el.set("class", " ".join(classes))
 
@@ -1188,7 +1320,12 @@ class CreateDrawing(bpy.types.Operator):
             if not obj:  # This is a linked model object. For now, do nothing.
                 continue
 
-            if not self.is_manifold(obj):
+            if (material := ifcopenshell.util.element.get_material(element)) and material.is_a() in (
+                "IfcMaterialLayerSet",
+                "IfcMaterialLayerSetUsage",
+            ):
+                pass  # These are always manifold
+            elif not self.is_manifold(obj):
                 continue
 
             # An element group will contain a bunch of paths representing the
@@ -1273,6 +1410,15 @@ class CreateDrawing(bpy.types.Operator):
                 else:
                     keys.append(key)
 
+            if layer:
+                for query in join_criteria:
+                    key = ifcopenshell.util.selector.get_element_value(layer, query)
+                    print("got layer key", query, key)
+                    if isinstance(key, (list, tuple)):
+                        keys.extend(key)
+                    else:
+                        keys.append(key)
+
             hash_keys = hash(tuple(keys))
 
             if el.findall("{http://www.w3.org/2000/svg}path"):
@@ -1289,7 +1435,8 @@ class CreateDrawing(bpy.types.Operator):
                 for path in el.findall("{http://www.w3.org/2000/svg}path"):
                     for subpath in path.attrib["d"].split("M")[1:]:
                         subpath_co = "M" + subpath.strip(" Z")
-                        coords = [[float(o) for o in co[1:].split(",")] for co in subpath_co.split()]
+                        # Round due to inaccuracies from Blender meshes and bisection
+                        coords = [[round(float(o), 3) for o in co[1:].split(",")] for co in subpath_co.split()]
                         if subpath.strip().lower().endswith("z"):
                             coords.append(coords[0])
                         if len(coords) > 2 and coords[0] == coords[-1]:
@@ -2041,7 +2188,6 @@ class ActivateDrawing(bpy.types.Operator, ActivateDrawingBase):
 
     @classmethod
     def poll(cls, context):
-        props = tool.Drawing.get_document_props()
         if not tool.Drawing.get_active_drawing_item():
             cls.poll_message_set("No drawing selected.")
             return False
@@ -2071,22 +2217,19 @@ class ActivateDrawingFromSheet(bpy.types.Operator, ActivateDrawingBase):
         return True
 
 
-class SelectDocIfcFile(bpy.types.Operator):
+# TODO: not exposed to the UI.
+class SelectDocIfcFile(bpy.types.Operator, ImportHelper):
     bl_idname = "bim.select_doc_ifc_file"
     bl_label = "Select Documentation IFC File"
     bl_options = {"REGISTER", "UNDO"}
     filter_glob: bpy.props.StringProperty(default="*.ifc;*.ifczip;*.ifcxml", options={"HIDDEN"})
-    filepath: bpy.props.StringProperty(subtype="FILE_PATH")
+    filename_ext = ".ifc"
     index: bpy.props.IntProperty()
 
     def execute(self, context):
         props = tool.Drawing.get_document_props()
         props.ifc_files[self.index].name = self.filepath
         return {"FINISHED"}
-
-    def invoke(self, context, event):
-        context.window_manager.fileselect_add(self)
-        return {"RUNNING_MODAL"}
 
 
 class ResizeText(bpy.types.Operator):
@@ -2466,23 +2609,18 @@ class RemoveSheet(bpy.types.Operator, tool.Ifc.Operator):
         core.remove_sheet(tool.Ifc, tool.Drawing, sheet=tool.Ifc.get().by_id(self.sheet))
 
 
-class AddSchedule(bpy.types.Operator, tool.Ifc.Operator):
+class AddSchedule(bpy.types.Operator, tool.Ifc.Operator, ImportHelper):
     bl_idname = "bim.add_schedule"
     bl_label = "Add Schedule"
     bl_options = {"REGISTER", "UNDO"}
     bl_description = "Add an .ods, .xls or .xlsx file as a schedule"
 
-    filepath: bpy.props.StringProperty(subtype="FILE_PATH")
     filter_glob: bpy.props.StringProperty(default="*.ods;*.xls;*.xlsx", options={"HIDDEN"})
     use_relative_path: bpy.props.BoolProperty(name="Use Relative Path", default=True)
 
     def _execute(self, context):
         filepath = tool.Ifc.get_uri(self.filepath, use_relative_path=self.use_relative_path)
         core.add_document(tool.Ifc, tool.Drawing, "SCHEDULE", uri=filepath)
-
-    def invoke(self, context, event):
-        context.window_manager.fileselect_add(self)
-        return {"RUNNING_MODAL"}
 
 
 class RemoveSchedule(bpy.types.Operator, tool.Ifc.Operator):
@@ -2653,23 +2791,19 @@ class AddReferenceToSheet(bpy.types.Operator, tool.Ifc.Operator):
         tool.Drawing.import_sheets()
 
 
-class AddReference(bpy.types.Operator, tool.Ifc.Operator):
+class AddReference(bpy.types.Operator, tool.Ifc.Operator, ImportHelper):
     bl_idname = "bim.add_reference"
     bl_label = "Add Reference"
     bl_description = "Import a .svg file to the project as a reference"
-
     bl_options = {"REGISTER", "UNDO"}
-    filepath: bpy.props.StringProperty(subtype="FILE_PATH")
+
     filter_glob: bpy.props.StringProperty(default="*.svg", options={"HIDDEN"})
     use_relative_path: bpy.props.BoolProperty(name="Use Relative Path", default=True)
+    filename_ext = ".svg"
 
     def _execute(self, context):
         filepath = tool.Ifc.get_uri(self.filepath, use_relative_path=self.use_relative_path)
         core.add_document(tool.Ifc, tool.Drawing, "REFERENCE", uri=filepath)
-
-    def invoke(self, context, event):
-        context.window_manager.fileselect_add(self)
-        return {"RUNNING_MODAL"}
 
 
 class RemoveReference(bpy.types.Operator, tool.Ifc.Operator):
@@ -3153,14 +3287,22 @@ class DisableEditingDrawings(bpy.types.Operator, tool.Ifc.Operator):
 class ExpandTargetView(bpy.types.Operator):
     bl_idname = "bim.expand_target_view"
     bl_label = "Expand Target View"
-    bl_description = "Show views in this category"
+    bl_description = "\nSHIFT+CLICK to expand all view categories "
 
     bl_options = {"REGISTER", "UNDO"}
     target_view: bpy.props.StringProperty()
+    expand_all: bpy.props.BoolProperty(name="Expand All", default=False, options={"SKIP_SAVE"})
+
+    def invoke(self, context, event):
+        # Expanding all categories on shift+click.
+        # Make sure to use SKIP_SAVE on property, otherwise it might get stuck (copied from #4771).
+        if event.type == "LEFTMOUSE" and event.shift:
+            self.expand_all = True
+        return self.execute(context)
 
     def execute(self, context):
         props = tool.Drawing.get_document_props()
-        for drawing in [d for d in props.drawings if d.target_view == self.target_view]:
+        for drawing in [d for d in props.drawings if self.expand_all or d.target_view == self.target_view]:
             drawing.is_expanded = True
         core.load_drawings(tool.Drawing)
         return {"FINISHED"}
@@ -3169,14 +3311,22 @@ class ExpandTargetView(bpy.types.Operator):
 class ContractTargetView(bpy.types.Operator):
     bl_idname = "bim.contract_target_view"
     bl_label = "Contract Target View"
-    bl_description = "Hide views in this category"
+    bl_description = "\n\nSHIFT+CLICK to hide all view categories"
 
     bl_options = {"REGISTER", "UNDO"}
     target_view: bpy.props.StringProperty()
+    contract_all: bpy.props.BoolProperty(name="Contract All", default=False, options={"SKIP_SAVE"})
+
+    def invoke(self, context, event):
+        # Contracting all categories on shift+click.
+        # Make sure to use SKIP_SAVE on property, otherwise it might get stuck (copied from #4771).
+        if event.type == "LEFTMOUSE" and event.shift:
+            self.contract_all = True
+        return self.execute(context)
 
     def execute(self, context):
         props = tool.Drawing.get_document_props()
-        for drawing in [d for d in props.drawings if d.target_view == self.target_view]:
+        for drawing in [d for d in props.drawings if self.contract_all or d.target_view == self.target_view]:
             drawing.is_expanded = False
         core.load_drawings(tool.Drawing)
         return {"FINISHED"}
@@ -3185,14 +3335,20 @@ class ContractTargetView(bpy.types.Operator):
 class ExpandSheet(bpy.types.Operator):
     bl_idname = "bim.expand_sheet"
     bl_label = "Expand Sheet"
-    bl_description = "Show views, schedules, references etc\nplaced on this sheet"
-
+    bl_description = "Show views, schedules, references etc\nplaced on this sheet.\n\nShift+click to expand all sheets."
     bl_options = {"REGISTER", "UNDO"}
+
     sheet: bpy.props.IntProperty()
+    expand_all: bpy.props.BoolProperty(name="Expand All", default=False, options={"SKIP_SAVE"})
+
+    def invoke(self, context, event):
+        if event.type == "LEFTMOUSE" and event.shift:
+            self.expand_all = True
+        return self.execute(context)
 
     def execute(self, context):
         props = tool.Drawing.get_document_props()
-        for sheet in [s for s in props.sheets if s.ifc_definition_id == self.sheet]:
+        for sheet in [s for s in props.sheets if self.expand_all or s.ifc_definition_id == self.sheet]:
             sheet.is_expanded = True
         core.load_sheets(tool.Drawing)
         return {"FINISHED"}
@@ -3201,14 +3357,22 @@ class ExpandSheet(bpy.types.Operator):
 class ContractSheet(bpy.types.Operator):
     bl_idname = "bim.contract_sheet"
     bl_label = "Contract Sheet"
-    bl_description = "Hide views, schedules, references etc\nplaced on this sheet"
-
+    bl_description = (
+        "Hide views, schedules, references etc\nplaced on this sheet.\n\nShift+click to contract all sheets."
+    )
     bl_options = {"REGISTER", "UNDO"}
+
     sheet: bpy.props.IntProperty()
+    expand_all: bpy.props.BoolProperty(name="Expand All", default=False, options={"SKIP_SAVE"})
+
+    def invoke(self, context, event):
+        if event.type == "LEFTMOUSE" and event.shift:
+            self.expand_all = True
+        return self.execute(context)
 
     def execute(self, context):
         props = tool.Drawing.get_document_props()
-        for sheet in [s for s in props.sheets if s.ifc_definition_id == self.sheet]:
+        for sheet in [s for s in props.sheets if self.expand_all or s.ifc_definition_id == self.sheet]:
             sheet.is_expanded = False
         core.load_sheets(tool.Drawing)
         return {"FINISHED"}
@@ -3269,7 +3433,7 @@ class EditElementFilter(bpy.types.Operator, tool.Ifc.Operator):
         bpy.ops.bim.activate_drawing(drawing=element.id(), should_view_from_camera=False)
 
 
-class AddReferenceImage(bpy.types.Operator, tool.Ifc.Operator):
+class AddReferenceImage(bpy.types.Operator, tool.Ifc.Operator, ImportHelper):
     bl_idname = "bim.add_reference_image"
     bl_label = "Add Reference Image"
     bl_description = "Add or import reference image to the IFC project"
@@ -3277,9 +3441,6 @@ class AddReferenceImage(bpy.types.Operator, tool.Ifc.Operator):
     bl_options = {"REGISTER", "UNDO"}
 
     use_relative_path: bpy.props.BoolProperty(name="Use Relative Path", default=True)
-    filepath: bpy.props.StringProperty(
-        name="File Path", description="Filepath used to import from", maxlen=1024, default="", subtype="FILE_PATH"
-    )
     filter_image: bpy.props.BoolProperty(default=True, options={"HIDDEN", "SKIP_SAVE"})
     filter_folder: bpy.props.BoolProperty(default=True, options={"HIDDEN", "SKIP_SAVE"})
 
@@ -3306,10 +3467,6 @@ class AddReferenceImage(bpy.types.Operator, tool.Ifc.Operator):
             layout.label(text="to use relative paths.")
         layout.prop(self, "override_existing_image")
         layout.prop(self, "use_existing_object_by_name")
-
-    def invoke(self, context, event):
-        context.window_manager.fileselect_add(self)
-        return {"RUNNING_MODAL"}
 
     def _execute(self, context):
         abs_path = Path(self.filepath).absolute().resolve()

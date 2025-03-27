@@ -177,6 +177,8 @@ class ObjectMaterialData:
     @classmethod
     def material_class(cls) -> Union[str, None]:
         element = tool.Ifc.get_entity(tool.Geometry.get_active_or_representation_obj())
+        assert element
+        cls.element = element
         cls.material = ifcopenshell.util.element.get_material(element)
         if cls.material:
             return cls.material.is_a()
@@ -238,8 +240,10 @@ class ObjectMaterialData:
         return results
 
     @classmethod
-    def set_items(cls):
+    def set_items(cls) -> list[dict[str, Any]]:
         results = []
+        if cls.material is None:
+            return results
         if cls.material:
             items = []
             if cls.material.is_a("IfcMaterialLayerSetUsage"):
@@ -298,7 +302,7 @@ class ObjectMaterialData:
                 else:
                     data["material"] = item.Material.Name or "Unnamed"
                 results.append(data)
-        should_reverse = cls.material.DirectionSense == "POSITIVE"
+        should_reverse = cls.material.is_a("IfcMaterialLayerSetUsage") and cls.material.DirectionSense == "POSITIVE"
         last_i = len(results) - 1
         for i, result in enumerate(results):
             result["index"] = i
@@ -358,19 +362,22 @@ class ObjectMaterialData:
             key=lambda x: x[1],
         )
 
+    type_material_: Union[ifcopenshell.entity_instance, None] = None
+
     @classmethod
     def type_material(cls):
         element = tool.Ifc.get_entity(tool.Geometry.get_active_or_representation_obj())
         element_type = ifcopenshell.util.element.get_type(element)
         if element_type and element_type != element:
             material = ifcopenshell.util.element.get_material(element_type)
+            cls.type_material_ = material
             if not material:
                 return
-            if material.is_a() in ("IfcMaterialLayerSetUsage", "IfcMaterialLayerSet"):
-                name_attr = "LayerSetName"
-            else:
-                name_attr = "Name"
-            return getattr(material, name_attr, "Unnamed") or "Unnamed"
+            ifc_class = material.is_a()
+            # Are there really usages in types?
+            if "Usage" in ifc_class:
+                return "Unnamed"
+            return tool.Material.get_material_name(material) or "Unnamed"
 
     @classmethod
     def material_type(cls):
@@ -395,15 +402,18 @@ class ObjectMaterialData:
 
     @classmethod
     def is_type_material_overridden(cls) -> bool:
-        if not cls.data["type_material"]:
+        if not cls.material or not cls.type_material_:
             return False
 
-        # try to avoid accessing ifc
-        if cls.data["material_name"] != cls.data["type_material"]:
+        # Typically, we don't indicate Usages as material overrides
+        # as this is just Usages nature.
+        if "Usage" in cls.material.is_a():
+            return False
+
+        if cls.material != cls.type_material_:
             return True
 
         # in theory material can be overridden by the same material
         # so we check occurrence material explicitly
-        element = tool.Ifc.get_entity(bpy.context.active_object)
-        occurrence_material = ifcopenshell.util.element.get_material(element, should_inherit=False)
-        return bool(occurrence_material) and "Usage" not in occurrence_material.is_a()
+        occurrence_material = ifcopenshell.util.element.get_material(cls.element, should_inherit=False)
+        return bool(occurrence_material)

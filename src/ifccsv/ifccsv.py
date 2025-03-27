@@ -53,7 +53,7 @@ except:
     pass  # No Pandas support
 
 
-__version__ = version = "0.0.0"
+__version__ = version = "0.8.2-alpha250327"
 
 
 FILE_FORMAT = Literal[
@@ -456,7 +456,15 @@ class IfcCsv:
         self.import_pd(ifc_file, df, attributes, null, empty, bool_true, bool_false)
 
     def import_pd(
-        self, ifc_file, df, attributes=None, null="-", empty="", bool_true="YES", bool_false="NO", concat=", "
+        self,
+        ifc_file: ifcopenshell.file,
+        df: "pd.DataFrame",
+        attributes: Optional[list[Union[str, None]]] = None,
+        null: str = "-",
+        empty: str = "",
+        bool_true: str = "YES",
+        bool_false: str = "NO",
+        concat: str = ", ",
     ) -> None:
         headers = df.columns.tolist()
 

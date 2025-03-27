@@ -51,7 +51,7 @@ STYLE_PROPS_MAP = {
 
 
 class Style(bonsai.core.tool.Style):
-    StyleType = Literal["Shading", "External", "Internal"]
+    StyleType = Literal["Shading", "External"]
 
     @classmethod
     def get_style_props(cls) -> BIMStylesProperties:

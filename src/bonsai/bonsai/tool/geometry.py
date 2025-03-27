@@ -178,7 +178,13 @@ class Geometry(bonsai.core.tool.Geometry):
         obj.lock_scale = (False, False, False)
 
     @classmethod
-    def lock_rotation(cls, obj: bpy.types.Object, x: bool=False, y: bool=False, z: bool=False,) -> None:
+    def lock_rotation(
+        cls,
+        obj: bpy.types.Object,
+        x: bool = False,
+        y: bool = False,
+        z: bool = False,
+    ) -> None:
         obj.lock_rotation = (x, y, z)
 
     @classmethod
@@ -1654,15 +1660,13 @@ class Geometry(bonsai.core.tool.Geometry):
 
         Use `.RelatedOpeningElement` to get the opening element.
         """
-        for element_rel in getattr(element, "HasOpenings", ()):
-            yield element_rel
-
-        if aggregate := ifcopenshell.util.element.get_aggregate(element):
-            yield from cls.get_openings(aggregate)
+        # TODO: replace everywhere with util method.
+        return ifcopenshell.util.element.get_openings(element)
 
     @classmethod
     def has_openings(cls, element: ifcopenshell.entity_instance) -> bool:
-        return bool(next(cls.get_openings(element), False))
+        # TODO: replace everywhere with util method.
+        return ifcopenshell.util.element.has_openings(element)
 
     @classmethod
     def get_elements_by_representation(

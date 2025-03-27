@@ -322,7 +322,7 @@ class DumbSlabPlaner:
                     abs(existing_x_angle) < (pi / 2) and direction_ratios.z < 0
                 ):
                     # The extrusion direction is negative. If the layer_parameter is set to positive,
-                    # then the we change the extrusion direction. And the offset direction should remain positive 
+                    # then the we change the extrusion direction. And the offset direction should remain positive
                     # for either direction sense, so we change it.
                     offset_direction *= -1
                     if layer_params["direction_sense"] == "POSITIVE":
@@ -864,7 +864,8 @@ class AddSlabFromWall(bpy.types.Operator, tool.Ifc.Operator):
     def poll(cls, context):
         return context.space_data.type == "VIEW_3D"
 
-    def __init__(self):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
         self.relating_type = None
         props = tool.Model.get_model_props()
         relating_type_id = props.relating_type_id
@@ -895,8 +896,9 @@ class DrawPolylineSlab(bpy.types.Operator, PolylineOperator, tool.Ifc.Operator):
     def poll(cls, context):
         return context.space_data.type == "VIEW_3D"
 
-    def __init__(self):
-        super().__init__()
+    def __init__(self, *args, **kwargs):
+        bpy.types.Operator.__init__(self, *args, **kwargs)
+        PolylineOperator.__init__(self)
         self.relating_type = None
         props = tool.Model.get_model_props()
         relating_type_id = props.relating_type_id

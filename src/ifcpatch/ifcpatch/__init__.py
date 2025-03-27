@@ -33,7 +33,7 @@ from typing import Union, Iterable, Optional, Any, TypedDict, Literal, Sequence
 from typing_extensions import NotRequired
 
 
-__version__ = version = "0.0.0"
+__version__ = version = "0.8.2-alpha250327"
 
 
 class ArgumentsDict(TypedDict):

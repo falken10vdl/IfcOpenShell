@@ -1,17 +1,17 @@
 Windows
 ================
 
+This quickstart will help you set up your MS Windows machine to explore the sourcecode of Bonsai 
+or develop and debug your blender scripts in VSCode. This has the benefit of having a complete
+development environment where you can explore the code, make changes, debug (break-points, watch 
+variable and stack contents, etc. ) and see the results in blender
 
-This quickstart will help you set up your MS Windows machine to explore the sourcecode of Bonsai. 
+- Steps 1-6 will get you started with VSCode to develop and debug python scripts in Blender.
 
-You will be able to update or contribute to the official documentation and also 
-explore the code behind Bonsai's functionalities to troubleshoot or propose new 
-features.
+- Steps 7-14 will allow you to interact with GitHub to make changes to the Bonsai project.
 
-We will be using Widnows 11 as our operating system and Visual Studio Code as our 
+We will be using AlmaLinux 9 as our operating system and Visual Studio Code as our 
 Integrated Development Environment (IDE) and we will create a dedicated user for Development.
-
-
 
 1. **Create Development User**: Open Windows Settings (typically hitting "Windows" key
    and writting "settings" in the search field) and then go to :menuselection:`Accounts --> Other users`.
@@ -92,7 +92,101 @@ Integrated Development Environment (IDE) and we will create a dedicated user for
 
    Congratulations! You have now a Python version in VSCode similar to the one run by Blender.
 
-5. **Install GitHub related VSCode extensions**: To facilitate the use of git commands and pulling
+5. **Connect VSCode to Blender by means of VSCode's extension: "Blender Development"**: This steps
+   is crucial to be able to develop and debug scripts in VSCode ans interactivwely see the results in Blender.
+      
+   Launch VSCode and go to the Extensions tab, search for Blender Development and install it.
+
+   .. image:: images/VSCode-blender-extension.png
+         :width: 1000 px
+   
+   This will also install some Python related extensions.
+
+   Finally create a sample python file and check the Python interpreter version in the bottom left corner.
+
+   :menuselection:`File --> New File... --> Python File`
+
+
+   .. image:: images/VSCode-python-ver.png
+         :width: 1000 px
+
+
+6. **Test that you can develop python scripts in VSCode for Belnder**: Create a sample blender python file under adirectory
+   for example *C:\Users\falke\Documents\bonsaiDevel\scripts*. You can use whatever blender python script you want. 
+   We will use this one from the blender documentation:
+   
+   `Example Panel <https://docs.blender.org/api/current/info_quickstart.html#example-panel>`__
+  
+   .. code-block:: python
+
+      import bpy
+
+      class HelloWorldPanel(bpy.types.Panel):
+         """Creates a Panel in the Object properties window"""
+         bl_label = "Hello World Panel"
+         bl_idname = "OBJECT_PT_hello"
+         bl_space_type = 'PROPERTIES'
+         bl_region_type = 'WINDOW'
+         bl_context = "object"
+
+         def draw(self, context):
+            layout = self.layout
+
+            obj = context.object
+
+            row = layout.row()
+            row.label(text="Hello world!", icon='WORLD_DATA')
+
+            row = layout.row()
+            row.label(text="Active object is: " + obj.name)
+            row = layout.row()
+            row.prop(obj, "name")
+
+            row = layout.row()
+            row.operator("mesh.primitive_cube_add")
+
+
+      def register():
+         bpy.utils.register_class(HelloWorldPanel)
+
+
+      def unregister():
+         bpy.utils.unregister_class(HelloWorldPanel)
+
+
+      if __name__ == "__main__":
+         print("Hello World: run from Blender Text Editor")
+      else:
+         print("Hello World: run from VSCode")
+         print(f"NOTE. __name__ is : {__name__}")
+
+      register()
+
+   We have changed the last part of the script since running from VSCode has some subtle diferences compared to running from the Blender Text Editor. In particular the special variable `__name__` is different.
+
+   Press CTRL-SHIFT-P and type "Blender: Open Scripts Folder". Select the previous folder where the script file is located
+
+   Press CTRL-SHIFT-P and type "Blender: Start". Blender will start.
+   
+   Press CTRL-SHIFT-P and type "Blender: Run Script". The script will run and the output will be seen in Blender!
+   
+   As you can see below. We have set a break-point in line 37 (see point 13 below for another example of setting a break-point). We can inspect in the left side the local variables, global variables, add watches, 
+   check the stack, etc. For example we can see that __name__ has a valuer of "<run_path>" Instead of "__main__".
+
+   .. image:: images/script-blender-vscode.png
+      :width: 1000 px
+
+   
+   Once we continue execution we can check in the VSCode Terminal the output and in Blender the panel created by the script.
+
+   .. image:: images/script-blender-vscode-2.png
+         :width: 1000 px
+
+   CONGRATULATIONS! You have now a development environment ready to speedup your python scripting in Blender.
+
+Now let's find out how to interact with GitHub in order to make changes to the Bonsai project.
+
+7. **Install GitHub related VSCode extensions**: To facilitate the use of git commands and pulling
    and pushing files from a local repository towards github, please install as well the following VSCode
    extensions:
 
@@ -109,7 +203,7 @@ Integrated Development Environment (IDE) and we will create a dedicated user for
          :width: 500 px
 
 
-6. **Fork IfcOpenShell project from GitHub**: For this step you will need an account on GitHub. 
+8. **Fork IfcOpenShell project from GitHub**: For this step you will need an account on GitHub. 
    Once you have a registered account you can find it under https://github.com/YOURGITHUBUSERID
    In the example for *falken10vdl* the link is https://github.com/falken10vdl
 
@@ -130,7 +224,7 @@ Integrated Development Environment (IDE) and we will create a dedicated user for
 
    Now we will clone the forked repository to our local machine. 
 
-7. **Cloning bonsai to our development environment**: Launch VSCode
+9. **Clone bonsai to our development environment**: Launch VSCode
    Select the Source Control tool. Then  :menuselection:`Clone repository` and then select "Clone from GitHub".
    
    .. image:: images/cloning-from-github.png
@@ -150,84 +244,83 @@ Integrated Development Environment (IDE) and we will create a dedicated user for
    .. image:: images/cloned-repo.png
       :width: 1000 px
 
-8. **Link the Bonsai addon to the local cloned repository**: We will now edit the following 
-   script that establishes links from the unstable-installation to the cloned repository so we 
-   can easily see the changes done in the cloned repository taken effect when we load blender 
-   locally.
+10. **Link the Bonsai addon to the local cloned repository**: We will now edit the following 
+    script that establishes links from the unstable-installation to the cloned repository so we 
+    can easily see the changes done in the cloned repository taken effect when we load blender 
+    locally.
 
-   .. container:: blockbutton
+    .. container:: blockbutton
 
-      `Download dev_environment.sh <https://docs.bonsaibim.org/quickstart/ide/dev_environment.sh>`__
+       `Download dev_environment.bat <https://docs.bonsaibim.org/quickstart/ide/dev_environment.bat>`__
 
-   Edit the file to match the paths in your system. In our case we will edit the following lines:
+    Edit the file to match the paths in your system. In our case we will edit the following lines:
 
-   - REPO_PATH="$HOME/bonsaiDevel/IfcOpenShell"
-   - BLENDER_PATH="$HOME/.config/blender/4.2"
-   - PACKAGE_PATH="${BLENDER_PATH}/extensions/.local/lib/python3.11/site-packages"
-   - BONSAI_PATH="${BLENDER_PATH}/extensions/raw_githubusercontent_com/bonsai"
+    - SET REPO_PATH=%HOMEDRIVE%\\Users\\%USERNAME%\\Documents\\bonsaiDevel\\IfcOpenShell
+    - SET BLENDER_PATH=%HOMEDRIVE%\\Users\\%USERNAME%\\AppData\\Roaming\\Blender Foundation\\Blender\\4.2
+    - SET PACKAGE_PATH=%BLENDER_PATH%\\extensions\\.local\\lib\\python3.11\\site-packages
+    - SET BONSAI_PATH=%BLENDER_PATH%\\extensions\\raw_githubusercontent_com\\bonsai
 
-   We execute the script in the terminal. Confirm the data and the script will create the necessary links.
+    You need to run it as an administrator. We execute the script in the terminal. Confirm the data and the script will create the necessary links.
 
-   .. code-block:: bash
+    .. code-block:: bash
 
-      ./dev_environment.sh
- 
-   .. image:: images/dev-environment-sh.png
-      :width: 1000 px
+       .\\dev_environment.bat
 
-   .. image:: images/dev-environment-sh-executed.png
-      :width: 1000 px
+    .. image:: images/dev-environment-bat.png
+       :width: 1000 px
 
-   .. warning::
+
+    .. warning::
    
-      If you receive an error like this:
+       If you receive errors like this:
 
-      .. code-block:: bash
+       .. code-block:: bash
 
-         cp: cannot stat '/home/falken10vdl/.config/blender/4.2/extensions/.local/lib/python3.11/site-packages/ifcopenshell/*_wrapper*': No such file or directory
+          The system cannot find the path specified.
 
-      It means that you have not installed the Bonsai Blender extension. Please refer to tha 
-      last part of point 2. above and follow the `Unstable installation <https://docs.bonsaibim.org/guides/development/installation.html#unstable-installation>`__.
-
-
-9. **Adjustments to the VSCode Blender extensionst**: We will now make some adjustments to the VSCode Blender extension to ease the reload of the addon.
-   Select the Extensions tool. Then  :menuselection:`Blender Development` and then select :menuselection:`Settings`.
-
-   .. image:: images/VSCode-blender-extension-settings.png
-      :width: 1000 px
-
-   Click twice in "Add Item" within the *Blender: Additonal Arguments* section and add the following two items (adapt *Testing.ifc* to the name of the IFC file you want to test during Bonsai development):
-
-   - --python-expr
-   - import bpy; bpy.ops.bim.load_project(filepath="/home/falken10vdl/bonsaiDevel/Testing.ifc", should_start_fresh_session=True, use_detailed_tooltip=True)
-
-   .. image:: images/VSCode-blender-additional-arguments.png
-      :width: 1000 px
-
-   Make sure that Blender > Addon: Just My code is not selected (This allows to set the breakpoints anywhere in the source code).
-
-   .. image:: images/just-my-code-false.png
-      :width: 1000 px
+       It means that you have not installed the Bonsai Blender extension. Please refer to tha 
+       last part of point 2. above and follow the `Unstable installation <https://docs.bonsaibim.org/guides/development/installation.html#unstable-installation>`__.
 
 
-   .. warning::
+11. **Adjust the VSCode Blender extension**: We will now make some adjustments to the VSCode Blender extension to ease the reload of the addon.
+    Select the Extensions tool. Then  :menuselection:`Blender Development` and then select :menuselection:`Settings`.
+
+    .. image:: images/VSCode-blender-extension-settings.png
+       :width: 1000 px
+
+    Click twice in "Add Item" within the *Blender: Additonal Arguments* section and add the following two items (adapt *Testing.ifc* to the name of the IFC file you want to 
+    test during Bonsai development). Note the double backslash in the path for correct interpretation by VSCode:
+
+    - --python-expr
+    - import bpy; bpy.ops.bim.load_project(filepath="C:\\\\Users\\\\falke\\\\Documents\\\\bonsaiDevel\\\\Testing.ifc", should_start_fresh_session=True, use_detailed_tooltip=True)
+
+    .. image:: images/VSCode-blender-additional-arguments.png
+       :width: 1000 px
+
+    Make sure that Blender > Addon: Just My code is not selected (This allows to set the breakpoints anywhere in the source code).
+
+    .. image:: images/just-my-code-false.png
+       :width: 1000 px
+
+
+    .. warning::
    
-      This way to use the VSCode Blender extension is not the standard one. Refer to the `VSCode Blender extension documentation <https://github.com/JacquesLucke/blender_vscode>`__ for the standard way to use it.
-      The reasond behind is that this allows us to start VSCode in the top of the cloned repository so
-      all the Git related funtionality in VSCode works properly and we have a complete view from VSCode 
-      :menuselection:`Explorer` tool of the whole repository. 
+       This way to use the VSCode Blender extension is not the standard one. Refer to the `VSCode Blender extension documentation <https://github.com/JacquesLucke/blender_vscode>`__ for the standard way to use it.
+       The reasond behind is that this allows us to start VSCode in the top of the cloned repository so
+       all the Git related funtionality in VSCode works properly and we have a complete view from VSCode 
+       :menuselection:`Explorer` tool of the whole repository. 
       
-      Bonsai is a big project with a lot of dependencies
-      so reloading it it is not an easy task (see discussion in https://community.osarch.org/discussion/1650/vscode-and-jacquesluckes-blender-vscode/p1). We have taken the pragmatic approach to start blender with a specific file (*Testing.ifc*) 
-      and then we can reload the addon from the Blender UI which also upload automatically the changes in the addon and the testing file
-      To summarize:
+       Bonsai is a big project with a lot of dependencies
+       so reloading it it is not an easy task (see discussion in https://community.osarch.org/discussion/1650/vscode-and-jacquesluckes-blender-vscode/p1). We have taken the pragmatic approach to start blender with a specific file (*Testing.ifc*) 
+       and then we can reload the addon from the Blender UI which also upload automatically the changes in the addon and the testing file
+       To summarize:
 
-      - We need *Blender > Addon: Just My code* to get the breakpoint functionality even if the addon is not "registered/loaded" to the extension (due to the root folder we use)
-      - We need *Blender: Additonal Arguments* to automatically load the Testing.ifc file when we start Blender from VSCode (We do not use *Blender:Reload Addons* since it does not work in our case)
+       - We need *Blender > Addon: Just My code* to get the breakpoint functionality even if the addon is not "registered/loaded" to the extension (due to the root folder we use)
+       - We need *Blender: Additonal Arguments* to automatically load the Testing.ifc file when we start Blender from VSCode (We do not use *Blender:Reload Addons* since it does not work in our case)
 
-      Instead of restarting Blender from VSCode, we use the Blender UI that, as explainedin the next step, it provides a simple way to get the addon and the Testing file reloaded.
+       Instead of restarting Blender from VSCode, we use the Blender UI that, as explainedin the next step, it provides a simple way to get the addon and the Testing file reloaded.
 
-10. **Launch blender from VSCode**: We are now ready to launch Blender from VSCode. 
+12. **Launch blender from VSCode**: We are now ready to launch Blender from VSCode. 
     Open VSCode. Open the cloned repository if not already open.
     Press CTRL-SHIFT-P and type "Blender: Start".
 
@@ -250,7 +343,7 @@ Integrated Development Environment (IDE) and we will create a dedicated user for
     .. image:: images/restart-blender.png
        :width: 1000 px
 
-11. **Adding a break-point**: Let's add a break-point in the code to see how it works.
+13. **Add a break-point**: Let's add a break-point in the code to see how it works.
     Press CTRL_SHIFT_P and type "Blender: Start". Blender will start.
     Open the cloned folder and go to  *src > bonsai > bonsai > bim > module > ligth > prop.py* and go to line 75.  
     Add a line for a print statemente and click on the left side of the line number to add a break-point.
@@ -284,7 +377,7 @@ Integrated Development Environment (IDE) and we will create a dedicated user for
 
     CONGRATULATIONS! You have now a development environment ready to explore the Bonsai code and contribute to the project.
 
-12. **Making changes and doing Pull Request to the project**: In the previous steps we got a complete IDE to explore and make changes to the Bonsai sourcecode.
+14. **Make changes and do a Pull Request to the project**: In the previous steps we got a complete IDE to explore and make changes to the Bonsai sourcecode.
     In this step we will provide a simple workflow of using Git commands within VSCode to make changes and do a Pull Request to the project.
     Bonsai changes very fast so our cloned repository will be outdated very soon. We propose to do the following:
 
@@ -305,7 +398,7 @@ Integrated Development Environment (IDE) and we will create a dedicated user for
        .. image:: images/check-fork.png
           :width: 1000 px
  
-    b. After clicking *Update brnach* our fork is up to date with the upstream main branch.
+    b. After clicking *Update branch* our fork is up to date with the upstream main branch.
 
        .. image:: images/sync-fork.png
           :width: 1000 px
@@ -336,7 +429,7 @@ Integrated Development Environment (IDE) and we will create a dedicated user for
        .. image:: images/new-branch-in-private-github.png
           :width: 1000 px
 
-    f. Make changes in the code. In this case we will change documentation by adding a Quickstart for the IDE in Linux. :)
+    f. Make changes in the code. In this case we will change documentation by adding a Quickstart for the IDE in Windows. :)
 
        .. image:: images/make-changes.png
           :width: 1000 px

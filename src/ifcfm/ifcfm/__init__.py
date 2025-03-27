@@ -46,7 +46,7 @@ try:
 except:
     pass  # No Pandas support
 
-__version__ = version = "0.0.0"
+__version__ = version = "0.8.2-alpha250327"
 
 
 ParserPreset = Literal["basic", "cobie24", "cobie24legacy"]

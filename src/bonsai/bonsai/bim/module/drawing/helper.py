@@ -20,6 +20,7 @@ import bpy
 import math
 import mathutils.geometry
 import ifcopenshell
+import ifcopenshell.util.unit
 import bonsai.tool as tool
 from mathutils import Vector
 from typing import Union
@@ -143,12 +144,12 @@ def format_distance(
         unit_scale = 1
         if length_unit := ifcopenshell.util.unit.get_project_unit(tool.Ifc.get(), "LENGTHUNIT"):
             unit_system = "METRIC" if length_unit.Name == "METRE" else "IMPERIAL"
-            unit_length = length_unit.Name
+            unit_length = length_unit.Name.upper()
             if hasattr(length_unit, "Prefix") and length_unit.Prefix:
                 unit_length = length_unit.Prefix + length_unit.Name
             unit_length_mapping = {
-                "foot": "FEET",
-                "inch": "INCHES",
+                "FOOT": "FEET",
+                "INCH": "INCHES",
                 "METRE": "METERS",
                 "DECIMETRE": "DECIMETERS",
                 "CENTIMETRE": "CENTIMETERS",
@@ -201,6 +202,7 @@ def format_distance(
 
         base = int(precision)
         decInches = value * toInches
+        decFeet = decInches / 12
 
         # Separate ft and inches
         # Unless Inches are the specified Length Unit or unit_fraction is False
@@ -271,6 +273,8 @@ def format_distance(
                 tx_dist += str(frac) + "/" + str(base)
             if add_inches or frac:
                 tx_dist += '"'
+            if precision == "12" and unit_system == "IMPERIAL":
+                tx_dist = str(round(decFeet)) + "'"
         else:
             fmt = "%1.3f"
             sq_feet = round(value * toInches / inPerFoot, 4)

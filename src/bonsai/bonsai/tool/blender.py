@@ -43,6 +43,8 @@ from typing_extensions import assert_never
 
 if TYPE_CHECKING:
     from bonsai.bim.prop import BIMProperties, BIMObjectProperties
+    from bonsai.bim.module.csv.prop import CsvProperties
+    from bonsai.bim.module.diff.prop import DiffProperties
 
     T = TypeVar("T")
 
@@ -212,11 +214,11 @@ class Blender(bonsai.core.tool.Blender):
             return omprops.active_material_set_item_id
         elif obj_type == "Task":
             tprops = tool.Sequence.get_task_tree_props()
-            return tprops.tasks[context.scene.BIMWorkScheduleProperties.active_task_index].ifc_definition_id
+            wsprops = tool.Sequence.get_work_schedule_props()
+            return tprops.tasks[wsprops.active_task_index].ifc_definition_id
         elif obj_type == "Cost":
-            return context.scene.BIMCostProperties.cost_items[
-                context.scene.BIMCostProperties.active_cost_item_index
-            ].ifc_definition_id
+            cost_props = tool.Cost.get_cost_props()
+            return cost_props.cost_items[cost_props.active_cost_item_index].ifc_definition_id
         elif obj_type == "Resource":
             return context.scene.BIMResourceTreeProperties.resources[
                 context.scene.BIMResourceProperties.active_resource_index
@@ -225,7 +227,8 @@ class Blender(bonsai.core.tool.Blender):
             props = tool.Profile.get_profile_props()
             return props.profiles[props.active_profile_index].ifc_definition_id
         elif obj_type == "WorkSchedule":
-            return context.scene.BIMWorkScheduleProperties.active_work_schedule_id
+            wsprops = tool.Sequence.get_work_schedule_props()
+            return wsprops.active_work_schedule_id
         elif obj_type == "Group":
             prop = context.scene.BIMGroupProperties
             return prop.groups[prop.active_group_index].ifc_definition_id
@@ -1599,6 +1602,14 @@ class Blender(bonsai.core.tool.Blender):
 
         dct = {cls.bl_idname: cls.ifc_element_type for cls in (BimTool.__subclasses__())}
         return types.MappingProxyType(dct)
+
+    @classmethod
+    def get_csv_props(cls) -> CsvProperties:
+        return bpy.context.scene.CsvProperties
+
+    @classmethod
+    def get_diff_props(cls) -> DiffProperties:
+        return bpy.context.scene.DiffProperties
 
     @classmethod
     def get_bim_props(cls, scene: Optional[bpy.types.Scene] = None) -> BIMProperties:

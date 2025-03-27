@@ -18,4 +18,4 @@
 
 from .ids import open
 
-__version__ = version = "0.0.0"
+__version__ = version = "0.8.2-alpha250327"

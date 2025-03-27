@@ -18,4 +18,4 @@
 
 from .cityjson2ifc import *
 
-__version__ = version = "0.0.0"
+__version__ = version = "0.8.2-alpha250327"

@@ -38,7 +38,7 @@ from orderly_set import OrderedSet
 from typing import Optional, Union, Literal, Any
 
 
-__version__ = version = "0.0.0"
+__version__ = version = "0.8.2-alpha250327"
 
 
 RELATIONSHIP_TYPE = Literal["geometry", "attributes", "type", "property", "container", "aggregate", "classification"]

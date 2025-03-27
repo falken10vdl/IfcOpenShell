@@ -278,12 +278,20 @@ class AssignMaterial(bpy.types.Operator, tool.Ifc.Operator):
 class UnassignMaterial(bpy.types.Operator, tool.Ifc.Operator):
     bl_idname = "bim.unassign_material"
     bl_label = "Unassign Material"
+    bl_description = (
+        "Unassign material from the selected objects.\n\n"
+        "If object inherits material from a type, material will be unassigned from the type.\n"
+        "If object has a material usage, related material set will be unassigned from the type."
+    )
     bl_options = {"REGISTER", "UNDO"}
     obj: bpy.props.StringProperty()
 
+    if TYPE_CHECKING:
+        obj: str
+
     def _execute(self, context):
-        objects = [bpy.data.objects.get(self.obj)] if self.obj else tool.Blender.get_selected_objects()
-        core.unassign_material(tool.Ifc, tool.Material, objects=objects)
+        objects = [bpy.data.objects[self.obj]] if self.obj else tool.Blender.get_selected_objects()
+        core.unassign_material(tool.Ifc, tool.Material, objects=list(objects))
 
 
 class AddConstituent(bpy.types.Operator, tool.Ifc.Operator):

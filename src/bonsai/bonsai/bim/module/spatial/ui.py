@@ -143,10 +143,8 @@ class BIM_PT_spatial_decomposition(Panel):
             op.part_class = self.props.subelement_class
 
             row = self.layout.row(align=True)
-            non_ifc_project_active = self.props.active_container.ifc_class != "IfcProject"
 
             col = row.column(align=True)
-            col.enabled = non_ifc_project_active
             op = col.operator("bim.set_default_container", icon="OUTLINER_COLLECTION", text="Set Default")
             op.container = ifc_definition_id
 
@@ -155,7 +153,6 @@ class BIM_PT_spatial_decomposition(Panel):
             col.operator("bim.select_container", icon="OBJECT_DATA", text="").container = ifc_definition_id
 
             col = row.column(align=True)
-            col.enabled = non_ifc_project_active
             op = col.operator("bim.delete_container", icon="X", text="")
             op.container = ifc_definition_id
 
@@ -264,7 +261,8 @@ class BIM_UL_containers_manager(UIList):
         "IfcRoadPart": "MOD_FLUID",
     }
 
-    def __init__(self):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
         self.use_filter_show = True
 
     def draw_item(
@@ -338,7 +336,8 @@ class BIM_UL_containers_manager(UIList):
 
 
 class BIM_UL_elements(UIList):
-    def __init__(self):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
         self.use_filter_show = True
 
     def draw_toggle(self, row: bpy.types.UILayout, is_expanded: bool, index: int):

@@ -39,16 +39,23 @@ from pathlib import Path
 from typing import Union, Any, Generator
 
 
-last_commit_hash = "8888888"
+last_commit_hash = "e81490c552587fe7855c231230d46a67886f013c"
+last_commit_date = "2025-03-27T19:31:38+05:00"
 
 
 def get_last_commit_hash() -> Union[str, None]:
-    # Using this weird way to write 8888888,
+    # Using this weird way to write e81490c552587fe7855c231230d46a67886f013c,
     # so makefile won't accidentally replace it here
     # we'll be able to distinguish commit hash from placeholder value.
     if last_commit_hash == str(8_888888):
         return None
     return last_commit_hash[:7]
+
+
+def get_last_commit_date() -> Union[str, None]:
+    if last_commit_date == str(9_999999):
+        return None
+    return last_commit_date
 
 
 # Accessed from bonsai extension:
@@ -96,6 +103,7 @@ def get_debug_info():
         "blender_version": bpy.app.version_string,
         "bonsai_version": bbim_version,
         "bonsai_commit_hash": get_last_commit_hash(),
+        "bonsai_commit_date": get_last_commit_date(),
         "last_actions": last_actions,
         "last_error": last_error,
     }
@@ -218,6 +226,7 @@ if IN_BLENDER:
         path = Path(__file__).resolve().parent
         repo = git.Repo(str(path), search_parent_directories=True)
         last_commit_hash = repo.head.object.hexsha
+        last_commit_date = repo.head.object.committed_datetime.isoformat()
     except:
         pass
 
@@ -236,7 +245,6 @@ if IN_BLENDER:
         ifcopenshell.api.add_pre_listener("*", "action_logger", log_api)
 
         def register():
-            print("Bonsai registered first3")
             if platform.system() == "Windows":
                 clean_up_dlls_safe_links()
 
@@ -380,7 +388,6 @@ if IN_BLENDER:
                 return False
 
         def register():
-            print("Bonsai registered2")
             # Only show our error panel and nothing else in the scene tab
             for item_name in dir(bpy.types):
                 item = getattr(bpy.types, item_name)

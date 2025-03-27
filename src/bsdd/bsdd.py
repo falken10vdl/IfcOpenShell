@@ -27,7 +27,7 @@ from typing import TypedDict, Literal, Optional
 from typing_extensions import NotRequired
 
 
-__version__ = version = "0.0.0"
+__version__ = version = "0.8.2-alpha250327"
 
 Status = Literal["Preview", "Active", "Inactive"]
 ClassTypes = Literal["Class", "GroupOfProperties", "AlternativeUse", "Material"]
