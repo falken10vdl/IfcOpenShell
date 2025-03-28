@@ -6,12 +6,27 @@ or develop and debug your blender scripts in VSCode. This has the benefit of hav
 development environment where you can explore the code, make changes, debug (break-points, watch 
 variable and stack contents, etc. ) and see the results in blender
 
-- Steps 1-6 will get you started with VSCode to develop and debug python scripts in Blender.
+- Steps 1-6 will get you started with VSCode to develop and debug python scripts in Blender and explore the Bonsai sourcecode and documentation.
 
 - Steps 7-14 will allow you to interact with GitHub to make changes to the Bonsai project.
 
-We will be using AlmaLinux 9 as our operating system and Visual Studio Code as our 
+We will be using Windows 11 as our operating system and Visual Studio Code as our 
 Integrated Development Environment (IDE) and we will create a dedicated user for Development.
+
+.. note::
+   In the following steps we wil be installing a number of applications. There are several ways to install them and that has impact on whether Windows is able to find the relevant binaries. In general if you have issues in the stpes below
+   related to not being able to find binaries, please check that the installation path is in the PATH environment variable. You can hit "Windows" key and write "environment variables".
+   
+   .. image:: images/environment-variables.png
+      :width: 500 px
+
+   And then go to :menuselection:`System Properties --> Advanced -->Environment Variables`.
+   
+   Check that the installation path is in the PATH variable. If not, you can add it by clicking in the :menuselection:`Edit... --> New`.
+
+   .. image:: images/windows-path.png
+      :width: 500 px
+
 
 1. **Create Development User**: Open Windows Settings (typically hitting "Windows" key
    and writting "settings" in the search field) and then go to :menuselection:`Accounts --> Other users`.
@@ -32,7 +47,7 @@ Integrated Development Environment (IDE) and we will create a dedicated user for
    
    https://www.blender.org/download/release/Blender4.2/blender-4.2.8-windows-x64.zip
 
-   Unzip the file in the user home directory. In our case it is *C:\Users\falken10vdl\Documents\blender-4.2.8-windows-x64*.
+   Unzip the file in the user home directory. In our case it is *C:\\Users\\falke\\Documents\\blender-4.2.8-windows-x64* (the user *falken10vdl* has as home directory *C:\\Users\\falke*).
 
    Congratulations! You have now Blender installed locally in your machine. You can launch it by double clicking in blender.exe which is situated in the previous folder.
 
@@ -112,7 +127,7 @@ Integrated Development Environment (IDE) and we will create a dedicated user for
 
 
 6. **Test that you can develop python scripts in VSCode for Belnder**: Create a sample blender python file under adirectory
-   for example *C:\Users\falke\Documents\bonsaiDevel\scripts*. You can use whatever blender python script you want. 
+   for example *C:\\Users\\falke\\Documents\\bonsaiDevel\\scripts*. You can use whatever blender python script you want. 
    We will use this one from the blender documentation:
    
    `Example Panel <https://docs.blender.org/api/current/info_quickstart.html#example-panel>`__
@@ -171,7 +186,7 @@ Integrated Development Environment (IDE) and we will create a dedicated user for
    Press CTRL-SHIFT-P and type "Blender: Run Script". The script will run and the output will be seen in Blender!
    
    As you can see below. We have set a break-point in line 37 (see point 13 below for another example of setting a break-point). We can inspect in the left side the local variables, global variables, add watches, 
-   check the stack, etc. For example we can see that __name__ has a valuer of "<run_path>" Instead of "__main__".
+   check the stack, etc. For example we can see that __name__ has a value of "<run_path>" Instead of "__main__".
 
    .. image:: images/script-blender-vscode.png
       :width: 1000 px
@@ -182,9 +197,85 @@ Integrated Development Environment (IDE) and we will create a dedicated user for
    .. image:: images/script-blender-vscode-2.png
          :width: 1000 px
 
+
    CONGRATULATIONS! You have now a development environment ready to speedup your python scripting in Blender.
 
+
+6.X **BONUS: Editing Bonsai Documentation**: Please refer to `Writing documentation <https://docs.bonsaibim.org/guides/development/writing_docs.html/>`__ for deatils on ow to edit and contribute
+   documentation. Here we just summarize the steps to integrate that workflow in VSCode and using Inkscape.
+
+   - Donwload and install Inkscape from `Inkscape download page <https://inkscape.org/release>`__. In our case we will use Inkscape 1.4 Windows 64 bit msi installer `Inkscape download page <https://inkscape.org/release/inkscape-1.4/windows/64-bit/msi/dl/>`__.  
+   
+   .. container:: blockbutton
+      `Download style annotation file <https://docs.bonsaibim.org/quickstart/ide/bonsai_style_annotation.svg>`__
+
+   - The file above has the style annotation for the Bonsai documentation. You can use it to create your own diagrams.
+
+   .. image:: images/inkscape-annotation-template.png
+         :width: 1000 px
+
+   - Open some screenshot file you want to add annotations in Inkscape and at also open this template. You can then copy paste from the temaplate to the screenshot file.
+
+   .. warning::
+      When copying the shapes for your convenience just make sure that you do not have selected the option "When scaling objects, scale the stroke width by the same proportion" to keep the style width right.
+      
+      .. image:: images/inkscape-scaling-outline.png
+         :width: 1000 px
+
+   - Once done you can export your edited screenshot as PNG to be used in the docummentation. :menuselection:`File --> Export...` and click in the Export button on bottom right corner.
+   - As described in `Writing documentation <https://docs.bonsaibim.org/guides/development/writing_docs.html/>`__ you need to have sphinx installed in your system. One of the easiest ways is to use `Chocolately <https://chocolatey.org/install>`__. 
+     Then you can simply run the following command in the terminal:
+
+      .. code-block::
+
+         choco install sphinx
+
+      and then install the theme and theme dependencies:
+
+      .. code-block::
+
+         python3.11 -m pip install furo
+         python3.11 -m pip install sphinx-autoapi
+         python3.11 -m pip install sphinx-copybutton
+
+      All these can be accomplished within a terminal of VSCode.
+
+      .. image:: images/doc-pip-furo.png
+            :width: 1000 px
+
+
+   - To speedup your workflow you can add the following VSCode files in the .vscode folder of your cloned repository. In our case it is *C:\\Users\\falke\\Documents\\bonsaiDevel\\IfcOpenShell\\.vscode*
+   - Make sure to edit them before with the right paths in your system.
+
+      - `launch.json <https://docs.bonsaibim.org/quickstart/ide/launch.json>`__
+
+         .. image:: images/launch-jason.png
+               :width: 1000 px
+
+      - `tasks.json <https://docs.bonsaibim.org/quickstart/ide/tasks.json>`__
+       
+         .. image:: images/tasks-jason.png
+               :width: 1000 px
+   
+   - Now you can use th debug tool in VSCode to regenerate the html documentation by cliking the "Play" button *BonsaiDocsServer (IfcOpenShell)* in the top left corner of the debug tool.
+
+      .. image:: images/bonsai-doc-server.png
+            :width: 1000 px
+
+   - Once the server is started you can open a browser and go to the following URL:
+      http://localhost:8000/ and you will see the documentation.
+   
+   - In order to rebuild the documentation you need to stop the server and run the command again. You can do this by clicking in the "Abort" button in the bottom right corner of the debug tool.
+
+      .. image:: images/doc-server-running.png
+            :width: 1000 px
+
+   CONGRATULATIONS! And happy documenting!
+            
+
+
 Now let's find out how to interact with GitHub in order to make changes to the Bonsai project.
+
 
 7. **Install GitHub related VSCode extensions**: To facilitate the use of git commands and pulling
    and pushing files from a local repository towards github, please install as well the following VSCode
@@ -262,9 +353,9 @@ Now let's find out how to interact with GitHub in order to make changes to the B
 
     You need to run it as an administrator. We execute the script in the terminal. Confirm the data and the script will create the necessary links.
 
-    .. code-block:: bash
+    .. code-block:: 
 
-       .\\dev_environment.bat
+       .\dev_environment.bat
 
     .. image:: images/dev-environment-bat.png
        :width: 1000 px
@@ -289,13 +380,17 @@ Now let's find out how to interact with GitHub in order to make changes to the B
        :width: 1000 px
 
     Click twice in "Add Item" within the *Blender: Additonal Arguments* section and add the following two items (adapt *Testing.ifc* to the name of the IFC file you want to 
-    test during Bonsai development). Note the double backslash in the path for correct interpretation by VSCode:
+    test during Bonsai development):
 
     - --python-expr
     - import bpy; bpy.ops.bim.load_project(filepath="C:\\\\Users\\\\falke\\\\Documents\\\\bonsaiDevel\\\\Testing.ifc", should_start_fresh_session=True, use_detailed_tooltip=True)
 
     .. image:: images/VSCode-blender-additional-arguments.png
        :width: 1000 px
+
+    .. warning::
+   
+       Note the double backslash in the path for correct interpretation by VSCode
 
     Make sure that Blender > Addon: Just My code is not selected (This allows to set the breakpoints anywhere in the source code).
 
@@ -360,7 +455,7 @@ Now let's find out how to interact with GitHub in order to make changes to the B
     .. image:: images/break-point.png
        :width: 1000 px
 
-    In Blender. Go To SOLAR ANALYSYS Tool in Bonsai and Click in "No Shadow", "Shaded" or "Rendered"
+    In Blender. Go To SOLAR ANALYSIS Tool in Bonsai and Click in "No Shadow", "Shaded" or "Rendered"
 
     .. image:: images/trigger-breakpoint.png
        :width: 1000 px
@@ -403,7 +498,7 @@ Now let's find out how to interact with GitHub in order to make changes to the B
        .. image:: images/sync-fork.png
           :width: 1000 px
 
-    c. Pull the changes in our porject fork to our local repository
+    c. Pull the changes in our project fork to our local repository
     
        .. image:: images/pull-changes.png
           :width: 1000 px
@@ -435,6 +530,7 @@ Now let's find out how to interact with GitHub in order to make changes to the B
           :width: 1000 px
 
     g. Commit the changes.
+       
        First provide your user name and email to Git.
 
        .. image:: images/git-user-email.png
@@ -448,9 +544,9 @@ Now let's find out how to interact with GitHub in order to make changes to the B
        Accept the staging of the changes prior to commit.
 
        .. image:: images/staging-prior-commit.png
-          :width: 1000 px
+          :width: 500 px
 
-    h. Push the changes to our new brnach in the github project fork.
+    h. Push the changes to our new branch in the github project fork.
     
        .. image:: images/push-to-private-fork-new-branch.png
           :width: 1000 px
