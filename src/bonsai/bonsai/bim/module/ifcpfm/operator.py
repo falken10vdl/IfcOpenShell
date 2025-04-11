@@ -1,6 +1,7 @@
 import bpy
 import os
 from . import ui
+import bonsai.tool as tool
 
 class FILETREE_OT_Refresh(bpy.types.Operator):
     bl_idname = "filetree.refresh"
@@ -22,7 +23,6 @@ class FILETREE_OT_Open(bpy.types.Operator):
     bl_label = "Open Project Folder"
     bl_description = "Opens the folder containing the current IFC file"
 
-    
 
     def execute(self, context):
         import subprocess
@@ -36,4 +36,13 @@ class FILETREE_OT_Open(bpy.types.Operator):
         else:  # Linux
             print (f"Opening {ifc_dir_path} with xdg-open")
             subprocess.Popen(["xdg-open", ifc_dir_path])
+        return {'FINISHED'}
+
+class LINKEDFILES_OT_Review(bpy.types.Operator):
+    bl_idname = "linkedfiles.review"
+    bl_label = "Review Linked Files"
+    bl_description = "Review the linked files in the project"
+
+    def execute(self, context):
+        context.scene.show_linked_files = not context.scene.show_linked_files
         return {'FINISHED'}

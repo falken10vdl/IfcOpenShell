@@ -34,11 +34,7 @@ import bpy
 from bpy.props import (
     PointerProperty,
     StringProperty,
-    EnumProperty,
     BoolProperty,
-    IntProperty,
-    FloatProperty,
-    FloatVectorProperty,
     CollectionProperty,
 )
 
@@ -60,4 +56,6 @@ class FileNode(bpy.types.PropertyGroup):
 # ---------------------------------------------
 class FileTree(bpy.types.PropertyGroup):
     nodes: CollectionProperty(type=FileNode)
-    
+
+# Add a property to manage the visibility of linked files
+bpy.types.Scene.show_linked_files = BoolProperty(default=False)

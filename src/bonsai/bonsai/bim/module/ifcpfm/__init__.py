@@ -39,6 +39,7 @@ classes = (
     prop.FileTree,
     operator.FILETREE_OT_Refresh,
     operator.FILETREE_OT_Open,
+    operator.LINKEDFILES_OT_Review,
     ui.FileTreePanel,
 )
 
@@ -49,6 +50,8 @@ classes = (
 # You might see more advanced registrations happening in other modules.
 def register():
     bpy.types.Scene.file_tree = bpy.props.PointerProperty(type=prop.FileTree)
+    bpy.types.Scene.show_linked_files = bpy.props.BoolProperty(default=False)
 
 def unregister():
     del bpy.types.Scene.file_tree
+    del bpy.types.Scene.show_linked_files
