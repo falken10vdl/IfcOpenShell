@@ -2,6 +2,68 @@ import bpy
 import os
 from . import ui
 import bonsai.tool as tool
+from bonsai.bim.module.ifcpfm.data import IfcpfmLinksData
+
+# ---------------------------------------------
+# Building the tree
+# ---------------------------------------------
+def build_file_tree(path):
+    if not os.path.exists(path):
+        raise FileNotFoundError(f"The directory {path} does not exist.")
+    if not os.access(path, os.R_OK):
+        raise PermissionError(f"Permission denied for accessing the directory {path}.")
+
+    file_tree = bpy.context.scene.file_tree
+    file_tree.nodes.clear()
+
+    # Create root node
+    root = file_tree.nodes.add()
+    root.name = os.path.basename(path) or path
+    root.full_path = path
+    root.is_directory = True
+    root.parent_name = ""
+
+    _build_tree_recursive(path, root)
+    return root
+
+def _build_tree_recursive(path, parent_node):
+    # Separate directories and files
+    directories = []
+    files = []
+
+    entries = os.listdir(path)
+    for entry in entries:
+        entry_path = os.path.join(path, entry)
+        if os.path.isdir(entry_path):
+            directories.append(entry)
+        else:
+            files.append(entry)
+
+    # Sort directories and files alphabetically
+    directories = sorted(directories, key=lambda x: x.lower())
+    files = sorted(files, key=lambda x: x.lower())
+
+    # Process directories first
+    for entry in directories:
+        entry_path = os.path.join(path, entry)
+        child_node = bpy.context.scene.file_tree.nodes.add()
+        child_node.name = entry
+        child_node.full_path = entry_path
+        child_node.is_directory = True
+        child_node.parent_name = parent_node.name
+
+        _build_tree_recursive(entry_path, child_node)
+
+    # Process files next
+    for entry in files:
+        entry_path = os.path.join(path, entry)
+        child_node = bpy.context.scene.file_tree.nodes.add()
+        child_node.name = entry
+        child_node.full_path = entry_path
+        child_node.is_directory = False
+        child_node.parent_name = parent_node.name
+    
+
 
 class FILETREE_OT_Refresh(bpy.types.Operator):
     bl_idname = "filetree.refresh"
@@ -9,11 +71,12 @@ class FILETREE_OT_Refresh(bpy.types.Operator):
     bl_description = "Rebuild the IFC file tree"
 
     def execute(self, context):
+        bpy.context.scene.show_directory_structure= not bpy.context.scene.show_directory_structure
         scene = context.scene
         if hasattr(scene, "BIMProperties") and hasattr(scene.BIMProperties, "ifc_file"):
             ifc_path = scene.BIMProperties.ifc_file
             if ifc_path:
-                ui.build_file_tree(os.path.dirname(ifc_path))
+                build_file_tree(os.path.dirname(ifc_path))
                 return {'FINISHED'}
         self.report({'WARNING'}, "No IFC file found")
         return {'CANCELLED'}
@@ -44,5 +107,6 @@ class LINKEDFILES_OT_Review(bpy.types.Operator):
     bl_description = "Review the linked files in the project"
 
     def execute(self, context):
-        context.scene.show_linked_files = not context.scene.show_linked_files
+        IfcpfmLinksData.is_loaded = False
+        bpy.context.scene.show_linked_files = not bpy.context.scene.show_linked_files
         return {'FINISHED'}

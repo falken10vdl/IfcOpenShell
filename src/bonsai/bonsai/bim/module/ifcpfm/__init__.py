@@ -28,7 +28,6 @@
 # system when the add-on loads. This is where it happens.
 
 import bpy
-import os
 from . import ui, prop, operator
 
 # You'll need to provide a list of every one of your classes here. If you forget
@@ -51,7 +50,10 @@ classes = (
 def register():
     bpy.types.Scene.file_tree = bpy.props.PointerProperty(type=prop.FileTree)
     bpy.types.Scene.show_linked_files = bpy.props.BoolProperty(default=False)
+    bpy.types.Scene.show_directory_structure = bpy.props.BoolProperty(default=False)
 
 def unregister():
     del bpy.types.Scene.file_tree
     del bpy.types.Scene.show_linked_files
+    del bpy.types.Scene.show_directory_structure
+    

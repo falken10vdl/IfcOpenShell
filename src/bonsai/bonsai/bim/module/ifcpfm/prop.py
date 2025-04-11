@@ -38,11 +38,6 @@ from bpy.props import (
     CollectionProperty,
 )
 
-
-
-# ---------------------------------------------
-# Node Class
-# ---------------------------------------------
 class FileNode(bpy.types.PropertyGroup):
     name: StringProperty()
     full_path: StringProperty()
@@ -51,11 +46,9 @@ class FileNode(bpy.types.PropertyGroup):
     enabled: BoolProperty()
     expanded: BoolProperty(default=False)
 
-# ---------------------------------------------
-# Tree Class
-# ---------------------------------------------
 class FileTree(bpy.types.PropertyGroup):
     nodes: CollectionProperty(type=FileNode)
 
 # Add a property to manage the visibility of linked files
 bpy.types.Scene.show_linked_files = BoolProperty(default=False)
+bpy.types.Scene.show_directory_structure = BoolProperty(default=False)

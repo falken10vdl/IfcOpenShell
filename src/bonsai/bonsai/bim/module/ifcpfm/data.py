@@ -30,6 +30,7 @@
 # code much simpler, more efficient, and less error-prone to refresh data.
 
 import bonsai.tool as tool
+import os
 
 
 # All data must have a refresh function. The refresh function simply sets all
@@ -37,15 +38,32 @@ import bonsai.tool as tool
 # the user, it will force the data to be reloaded.
 def refresh():
     # When you define your own data classes, just add to this list!
-    IfcpfmData.is_loaded = False
-
+    IfcpfmLinksData.is_loaded = False
 
 # This is a sample data class. It correlates to a single interface panel. Panels
 # should not share data classes. This makes it easy to write your interface
 # without having your code mixed in with other parts of the interface. As a
 # convention, the class is named the same name as the panel.
-class IfcpfmData:
+
+
+class IfcpfmLinksData:
     # All data classes must have two variables. One to store all the data it has
     # loaded and another to store the load state.
-    data = {}
+    linked_files = []
     is_loaded = False
+
+    @classmethod
+    def load(cls):
+        cls.linked_files = []
+        # The load function always has two responsibilities: populate the data,
+        # and set is_loaded to true.
+        links = tool.Project.get_project_props().links
+        for link in links:
+            if os.path.isabs(link.name):
+                icon = "ERROR"
+            elif link.name.startswith(".."):
+                icon = "VIEW_PAN"
+            else:
+                icon = "LINK_BLEND"
+            cls.linked_files.append({"name": link.name, "icon": icon})
+        cls.is_loaded = True
