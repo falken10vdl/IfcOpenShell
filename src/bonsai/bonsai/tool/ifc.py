@@ -262,9 +262,11 @@ class Ifc(bonsai.core.tool.Ifc):
         if os.path.isabs(uri):
             return uri
         ifc_path = cls.get_path()
-        if os.path.isfile(ifc_path):
-            ifc_path = os.path.dirname(ifc_path)
-        return (uri if not uri else os.path.join(ifc_path, uri)).replace("\\", "/")
+        absPath = (Path(ifc_path).parent / Path(uri)).resolve().as_posix()
+        if not os.path.isfile(ifc_path):
+            return uri
+
+        return (uri if not uri else absPath)
 
     @classmethod
     def get_uri(cls, uri: str | Path, use_relative_path: bool = False) -> str:
@@ -273,7 +275,9 @@ class Ifc(bonsai.core.tool.Ifc):
         If `use_relative_path` is `False` - get absolute filepath from uri.
         """
         if not use_relative_path:
-            return Path(uri).absolute().resolve().as_posix()
+            #return Path(uri).absolute().resolve().as_posix()
+            absPath = (Path(bpy.context.scene.BIMProperties['ifc_file']).parent / Path(uri)).resolve().as_posix()
+            return absPath
         uri = Path(uri)
         if not os.path.isabs(uri) or not (ifc_path := cls.get_path()):
             return uri.as_posix().replace("\\", "/")
