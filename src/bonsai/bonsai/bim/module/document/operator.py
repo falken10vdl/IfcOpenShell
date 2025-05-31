@@ -26,6 +26,7 @@ import bonsai.tool as tool
 import bonsai.core.document as core
 from .data import ObjectDocumentData, DocumentData
 
+
 class LoadProjectDocuments(bpy.types.Operator):
     bl_idname = "bim.load_project_documents"
     bl_label = "Load Project Documents"
@@ -183,6 +184,7 @@ class SelectDocumentObjects(bpy.types.Operator):
         self.report({"INFO"}, f"{i} objects selected.")
         return {"FINISHED"}
 
+
 class AssignSelectedObjectsToDocument(bpy.types.Operator, tool.Ifc.Operator):
     bl_idname = "bim.assign_selected_objects_to_document"
     bl_label = "Assign Selected Objects To Document"
@@ -198,24 +200,25 @@ class AssignSelectedObjectsToDocument(bpy.types.Operator, tool.Ifc.Operator):
         if not document:
             self.report({"ERROR"}, "Invalid document")
             return
-            
+
         selected_objects = [obj for obj in context.selected_objects if tool.Blender.get_ifc_definition_id(obj)]
         if not selected_objects:
             self.report({"ERROR"}, "No IFC objects selected")
             return
-            
+
         for obj in selected_objects:
             ifc_entity = tool.Ifc.get_entity(obj)
             if ifc_entity:
                 tool.Ifc.run("document.assign_document", products=[ifc_entity], document=document)
-                
+
         # Refresh document data after assignment
         ObjectDocumentData.load()
         DocumentData.load()
         props = tool.Document.get_document_props()
         tool.Document.load_referenceable_objects(document)
-        
+
         self.report({"INFO"}, f"Assigned {len(selected_objects)} objects to document")
+
 
 class RemoveObjectFromDocumentReference(bpy.types.Operator, tool.Ifc.Operator):
     bl_idname = "bim.remove_object_from_document_reference"
@@ -228,64 +231,61 @@ class RemoveObjectFromDocumentReference(bpy.types.Operator, tool.Ifc.Operator):
         if not self.document or not self.object:
             self.report({"ERROR"}, "Invalid document or object")
             return
-            
+
         document = tool.Ifc.get().by_id(self.document)
         product = tool.Ifc.get().by_id(self.object)
-        
+
         if document and product:
             tool.Ifc.run("document.unassign_document", products=[product], document=document)
-            
+
             # Refresh document data after removal
             ObjectDocumentData.load()
             DocumentData.load()
             props = tool.Document.get_document_props()
             tool.Document.load_referenceable_objects(document)
-            
+
             self.report({"INFO"}, f"Removed object from document")
+
 
 class OpenIFCDocument(bpy.types.Operator):
     bl_idname = "bim.open_ifc_document"
     bl_label = "Open IFC Document"
+    bl_description = "Open the IFC document in a new Blender instance and load the project"
     bl_options = {"REGISTER", "UNDO"}
-    
+
     uri: bpy.props.StringProperty(name="URI")
-    
+
     def execute(self, context):
-        import os
         import subprocess
-        import sys
-        
-        # Check if URI is valid
+        import os
+
         if not self.uri:
             self.report({"ERROR"}, "No URI provided")
             return {"CANCELLED"}
-            
-        # Handle both local and remote paths
+
         file_path = self.uri
-        
-        # If it's a URL, report that it can't be opened directly in Blender
-        if file_path.startswith("http://") or file_path.startswith("https://"):
-            self.report({"ERROR"}, "Cannot open remote IFC files directly. Please download first.")
-            return {"CANCELLED"}
-            
-        # Verify file exists and is an IFC
+        if file_path.startswith("file://"):
+            file_path = file_path[7:]
+        elif file_path.startswith("file:"):
+            file_path = file_path[5:]
+
+        if not os.path.isabs(file_path):
+            file_path = os.path.abspath(file_path)
+
         if not os.path.exists(file_path):
-            self.report({"ERROR"}, f"File not found: {file_path}")
+            self.report({"ERROR"}, f"IFC file not found: {file_path}")
             return {"CANCELLED"}
-        
-        if not file_path.lower().endswith('.ifc'):
-            self.report({"ERROR"}, f"Not an IFC file: {file_path}")
-            return {"CANCELLED"}
-        
-        # Get path to Blender executable
-        blender_exe = bpy.app.binary_path
-        
-        # Launch new Blender instance with the IFC file
+
         try:
-            subprocess.Popen([blender_exe, file_path])
-            self.report({"INFO"}, f"Opening IFC file in new Blender instance: {file_path}")
+            subprocess.Popen(
+                [
+                    "blender",
+                    "--python-expr",
+                    f"import bpy; bpy.ops.bim.load_project(filepath='{file_path}', should_start_fresh_session=True)",
+                ]
+            )
+            self.report({"INFO"}, f"Opening IFC file: {file_path} in a new Blender instance.")
         except Exception as e:
             self.report({"ERROR"}, f"Failed to open IFC file: {str(e)}")
-            return {"CANCELLED"}
-            
+
         return {"FINISHED"}

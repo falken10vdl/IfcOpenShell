@@ -45,11 +45,10 @@ class DocumentData:
             doc_id = rel.RelatingDocument.id()
             if doc_id not in cls.data["document_references"]:
                 cls.data["document_references"][doc_id] = []
-            
+
             for obj in rel.RelatedObjects:
                 name = obj.Name or f"#{obj.id()}"
                 cls.data["document_references"][doc_id].append(name)
-
 
     @classmethod
     def total_information(cls):

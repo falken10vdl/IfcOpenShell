@@ -94,13 +94,13 @@ def edit_document(ifc: tool.Ifc, document_tool: tool.Document, document: ifcopen
         ifc.run("document.edit_information", information=document, attributes=attributes)
     else:
         ifc.run("document.edit_reference", reference=document, attributes=attributes)
-    
+
     props = document_tool.get_document_props()
     for obj in props.document_referenced_objects:
         if obj.is_selected:
             product = ifc.get().by_id(obj.ifc_definition_id)
             assign_document(ifc, product, document)
-    
+
     document_tool.disable_editing_document()
     document_tool.clear_document_tree()
     parent = document_tool.get_active_breadcrumb()

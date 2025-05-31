@@ -69,6 +69,7 @@ class DocumentReferencedObject(PropertyGroup):
     ifc_definition_id: IntProperty(name="IFC Definition ID")
     is_selected: BoolProperty(name="Is Selected", default=False)
 
+
 class BIMDocumentProperties(PropertyGroup):
     document_attributes: CollectionProperty(name="Document Attributes", type=Attribute)
     active_document_id: IntProperty(name="Active Document Id")

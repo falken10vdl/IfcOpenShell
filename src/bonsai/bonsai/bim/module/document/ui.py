@@ -83,7 +83,6 @@ class BIM_PT_documents(Panel):
             draw_document_referenced_objects(self.layout, self.props)
 
 
-
 class BIM_PT_object_documents(Panel):
     bl_label = "Documents"
     bl_idname = "BIM_PT_object_documents"
@@ -124,8 +123,8 @@ class BIM_PT_object_documents(Panel):
             row.label(text=document["identification"] or "*", icon="FILE")
             row.label(text=document["name"] or "Unnamed")
             if document["location"]:
-                if document["location"].lower().endswith('.ifc'):
-                    row.operator("bim.open_ifc_document", icon="FILE_3D", text="").uri = document["location"]
+                if document["location"].lower().endswith(".ifc"):
+                    row.operator("bim.open_ifc_document", icon="HIDE_OFF", text="").uri = document["location"]
                 row.operator("bim.open_uri", icon="URL", text="").uri = document["location"]
             row.operator("bim.unassign_document", text="", icon="X").document = document["id"]
 
@@ -157,7 +156,7 @@ class BIM_UL_documents(UIList):
         if not DocumentData.is_loaded:
             DocumentData.load()
         return DocumentData.data["document_references"].get(document_id, [])
-    
+
     def draw_item(self, context, layout, data, item, icon, active_data, active_propname):
         if item:
             row = layout.row(align=True)
@@ -171,10 +170,10 @@ class BIM_UL_documents(UIList):
                 row.label(text="", icon="FILE_HIDDEN")
 
             split1 = row.split(factor=0.1)
-            split1.prop(item, "identification", text="", emboss=False)    
+            split1.prop(item, "identification", text="", emboss=False)
             split2 = split1.split(factor=0.7)
             split2.prop(item, "name", text="", emboss=False)
-            
+
             split3 = split2.split()
             referenced_objects = self.get_referenced_objects(item.ifc_definition_id)
             if referenced_objects:
@@ -186,14 +185,57 @@ class BIM_UL_documents(UIList):
                 split3.label(text="")
 
 
-
 class BIM_UL_document_referenced_objects(UIList):
     def draw_item(self, context, layout, data, item, icon, active_data, active_propname):
-        if self.layout_type == 'DEFAULT':
+        if self.layout_type == "DEFAULT":
             row = layout.row(align=True)
-            # Show object name
             row.label(text=item.name)
-            # Add removal button
             op = row.operator("bim.remove_object_from_document_reference", text="", icon="X")
             op.document = active_data.active_document_id
             op.object = item.ifc_definition_id
+
+
+def add_object_documents_context_menu(self, context):
+    if not context.active_object:
+        return
+
+    if not tool.Blender.get_ifc_definition_id(context.active_object):
+        return
+
+    self.layout.separator()
+    self.layout.menu("BIM_MT_object_documents_context_menu", icon="FILE")
+
+
+class BIM_MT_object_documents_context_menu(bpy.types.Menu):
+    bl_idname = "BIM_MT_object_documents_context_menu"
+    bl_label = "Documents"
+
+    def draw(self, context):
+        layout = self.layout
+
+        if not context.selected_objects:
+            layout.label(text="No documents", icon="INFO")
+            return
+
+        if len(context.selected_objects) > 1:
+            layout.label(text="Select a single object to see its referenced documents", icon="INFO")
+            return
+
+        obj = context.active_object
+        if not obj or not tool.Blender.get_ifc_definition_id(obj):
+            layout.label(text="No documents", icon="INFO")
+            return
+
+        if not ObjectDocumentData.is_loaded:
+            ObjectDocumentData.load()
+
+        if not ObjectDocumentData.data["documents"]:
+            layout.label(text="No Documents", icon="FILE")
+        else:
+            for document in ObjectDocumentData.data["documents"]:
+                row = layout.row(align=True)
+                if document["location"]:
+                    if document["location"].lower().endswith(".ifc"):
+                        row.operator("bim.open_ifc_document", icon="HIDE_OFF", text="").uri = document["location"]
+                    row.operator("bim.open_uri", icon="URL", text="").uri = document["location"]
+                row.label(text=f"{document['identification'] or '*'}: {document['name'] or 'Unnamed'}")
