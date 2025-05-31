@@ -33,11 +33,16 @@ classes = (
     operator.RemoveDocument,
     operator.SelectDocumentObjects,
     operator.UnassignDocument,
+    operator.AssignSelectedObjectsToDocument,
+    operator.RemoveObjectFromDocumentReference,
+    operator.OpenIFCDocument,
+    prop.DocumentReferencedObject,
     prop.Document,
     prop.BIMDocumentProperties,
     ui.BIM_PT_documents,
     ui.BIM_PT_object_documents,
     ui.BIM_UL_documents,
+    ui.BIM_UL_document_referenced_objects,
 )
 
 

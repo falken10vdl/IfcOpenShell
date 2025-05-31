@@ -179,3 +179,25 @@ class Document(bonsai.core.tool.Document):
         if document.file.schema == "IFC2X3":
             return document.DocumentReferences or ()
         return document.HasDocumentReferences
+
+    @classmethod
+    def load_referenceable_objects(cls, document: ifcopenshell.entity_instance) -> None:
+        """Load objects that are referenced by this document."""
+        props = cls.get_document_props()
+        props.document_referenced_objects.clear()
+        
+        # Get objects referenced by this document using the utility function
+        referenced_products = ifcopenshell.util.element.get_referenced_elements(document)
+        
+        # Add them to the list
+        for product in referenced_products:
+            # We only care about physical objects (IfcProducts)
+            if not product.is_a("IfcProduct"):
+                continue
+                
+            obj = tool.Ifc.get_object(product)
+            if obj:
+                item = props.document_referenced_objects.add()
+                item.name = obj.name or f"#{product.id()}"
+                item.ifc_definition_id = product.id()
+    

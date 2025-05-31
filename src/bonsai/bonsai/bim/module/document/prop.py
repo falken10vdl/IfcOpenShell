@@ -64,6 +64,11 @@ class Document(PropertyGroup):
         ifc_definition_id: int
 
 
+class DocumentReferencedObject(PropertyGroup):
+    name: StringProperty(name="Name")
+    ifc_definition_id: IntProperty(name="IFC Definition ID")
+    is_selected: BoolProperty(name="Is Selected", default=False)
+
 class BIMDocumentProperties(PropertyGroup):
     document_attributes: CollectionProperty(name="Document Attributes", type=Attribute)
     active_document_id: IntProperty(name="Active Document Id")
@@ -71,6 +76,8 @@ class BIMDocumentProperties(PropertyGroup):
     breadcrumbs: CollectionProperty(name="Breadcrumbs", type=StrProperty)
     active_document_index: IntProperty(name="Active Document Index")
     is_editing: BoolProperty(name="Is Editing", default=False)
+    document_referenced_objects: CollectionProperty(name="Document Referenced Objects", type=DocumentReferencedObject)
+    active_document_referenced_object_index: IntProperty(name="Active Document Referenced Object Index")
 
     if TYPE_CHECKING:
         document_attributes: bpy.types.bpy_prop_collection_idprop[Attribute]

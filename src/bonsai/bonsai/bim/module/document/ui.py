@@ -16,9 +16,10 @@
 # You should have received a copy of the GNU General Public License
 # along with Bonsai.  If not, see <http://www.gnu.org/licenses/>.
 
+import bpy
 import bonsai.tool as tool
 from bpy.types import Panel, UIList
-from bonsai.bim.helper import draw_attributes
+from bonsai.bim.helper import draw_attributes, draw_document_referenced_objects
 from bonsai.bim.module.document.data import DocumentData, ObjectDocumentData
 
 
@@ -79,6 +80,8 @@ class BIM_PT_documents(Panel):
 
         if self.props.active_document_id:
             draw_attributes(self.props.document_attributes, self.layout)
+            draw_document_referenced_objects(self.layout, self.props)
+
 
 
 class BIM_PT_object_documents(Panel):
@@ -121,6 +124,8 @@ class BIM_PT_object_documents(Panel):
             row.label(text=document["identification"] or "*", icon="FILE")
             row.label(text=document["name"] or "Unnamed")
             if document["location"]:
+                if document["location"].lower().endswith('.ifc'):
+                    row.operator("bim.open_ifc_document", icon="FILE_3D", text="").uri = document["location"]
                 row.operator("bim.open_uri", icon="URL", text="").uri = document["location"]
             row.operator("bim.unassign_document", text="", icon="X").document = document["id"]
 
@@ -147,6 +152,12 @@ class BIM_PT_object_documents(Panel):
 
 
 class BIM_UL_documents(UIList):
+    def get_referenced_objects(self, document_id):
+        """Get names of objects referenced by this document"""
+        if not DocumentData.is_loaded:
+            DocumentData.load()
+        return DocumentData.data["document_references"].get(document_id, [])
+    
     def draw_item(self, context, layout, data, item, icon, active_data, active_propname):
         if item:
             row = layout.row(align=True)
@@ -160,7 +171,29 @@ class BIM_UL_documents(UIList):
                 row.label(text="", icon="FILE_HIDDEN")
 
             split1 = row.split(factor=0.1)
-            # split1.label(text=item.identification)
-            split1.prop(item, "identification", text="", emboss=False)
-            split2 = split1.split(factor=0.9)
+            split1.prop(item, "identification", text="", emboss=False)    
+            split2 = split1.split(factor=0.7)
             split2.prop(item, "name", text="", emboss=False)
+            
+            split3 = split2.split()
+            referenced_objects = self.get_referenced_objects(item.ifc_definition_id)
+            if referenced_objects:
+                object_names = ", ".join(referenced_objects[:3])
+                if len(referenced_objects) > 3:
+                    object_names += f" +{len(referenced_objects) - 3}"
+                split3.label(text=object_names)
+            else:
+                split3.label(text="")
+
+
+
+class BIM_UL_document_referenced_objects(UIList):
+    def draw_item(self, context, layout, data, item, icon, active_data, active_propname):
+        if self.layout_type == 'DEFAULT':
+            row = layout.row(align=True)
+            # Show object name
+            row.label(text=item.name)
+            # Add removal button
+            op = row.operator("bim.remove_object_from_document_reference", text="", icon="X")
+            op.document = active_data.active_document_id
+            op.object = item.ifc_definition_id

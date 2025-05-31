@@ -44,7 +44,6 @@ if TYPE_CHECKING:
     # - False - property should be exproted by default workflow
     ExportCallback = Callable[[dict[str, Any], bonsai.bim.prop.Attribute], bool]
 
-
 def draw_attributes(
     props: bpy.types.bpy_prop_collection_idprop[Attribute],
     layout: bpy.types.UILayout,
@@ -476,3 +475,22 @@ def draw_filter(
             op.group_index = i
             op.index = j
             op.module = module
+
+def draw_document_referenced_objects(layout, props):
+    if props.active_document_id:
+        box = layout.box()
+        
+        header_row = box.row(align=True)
+        header_row.label(text="Referenced Objects:")
+        add_op = header_row.operator("bim.assign_selected_objects_to_document", text="", icon="ADD")
+        add_op.document = props.active_document_id
+        
+        row = box.row()
+        row.template_list(
+            "BIM_UL_document_referenced_objects", 
+            "", 
+            props, 
+            "document_referenced_objects", 
+            props, 
+            "active_document_referenced_object_index"
+            )
