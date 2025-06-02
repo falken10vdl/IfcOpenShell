@@ -46,14 +46,25 @@ class BIM_PT_libraries(Panel):
             LibrariesData.load()
         self.props = tool.Library.get_library_props()
 
+        row = self.layout.row(align=True)
+        row.label(text="{} Libraries Found".format(len(LibrariesData.data["libraries"])), icon="ASSET_MANAGER")
+        if self.props.editing_mode == "NONE":
+            row.operator("bim.load_project_libraries", text="", icon="IMPORT")
+        else:
+            row.operator("bim.disable_library_editing_ui", text="", icon="CANCEL")
+
         if self.props.editing_mode == "LIBRARY":
             self.draw_editable_library_ui()
         elif self.props.editing_mode == "REFERENCE":
             self.draw_editable_reference_ui()
         elif self.props.editing_mode == "REFERENCES":
             self.draw_editable_references_ui()
-        else:
+        elif self.props.editing_mode == "READONLY":
             self.draw_readonly_library_ui()
+
+        if not self.props.editing_mode:
+            return
+
 
     def draw_editable_library_ui(self):
         row = self.layout.row(align=True)
@@ -99,39 +110,77 @@ class BIM_PT_libraries(Panel):
             row.operator("bim.remove_library", text="", icon="X").library = library["id"]
 
 
-class BIM_PT_library_references(Panel):
-    bl_label = "Library References"
-    bl_idname = "BIM_PT_library_references"
+
+
+class BIM_PT_object_libraries(Panel):
+    bl_label = "Libraries"
+    bl_idname = "BIM_PT_object_libraries"
     bl_options = {"DEFAULT_CLOSED"}
     bl_space_type = "PROPERTIES"
     bl_region_type = "WINDOW"
     bl_context = "object"
-    bl_order = 1
+    bl_order = 2
     bl_parent_id = "BIM_PT_tab_misc"
 
     @classmethod
     def poll(cls, context):
-        return tool.Ifc.get()
+        if not (obj := context.active_object):
+            return False
+        if not (ifc_id := tool.Blender.get_ifc_definition_id(obj)):
+            return False
+        if not tool.Ifc.get_object_by_identifier(ifc_id):
+            return False
+        return True
 
     def draw(self, context):
         if not LibraryReferencesData.is_loaded:
             LibraryReferencesData.load()
-        self.props = tool.Library.get_library_props()
 
-        if self.props.editing_mode == "REFERENCES":
-            self.layout.template_list(
-                "BIM_UL_object_library_references", "", self.props, "references", self.props, "active_reference_index"
-            )
+        obj = context.active_object
+        self.oprops = tool.Blender.get_object_bim_props(obj)
+        self.props = tool.Library.get_library_props()
+        self.file = tool.Ifc.get()
+
+        self.draw_add_ui()
 
         if not LibraryReferencesData.data["references"]:
-            row = self.layout.row()
-            row.label(text="No References")
+            row = self.layout.row(align=True)
+            row.label(text="No Libraries", icon="ASSET_MANAGER")
 
         for reference in LibraryReferencesData.data["references"]:
             row = self.layout.row(align=True)
             row.label(text=reference["identification"], icon="ASSET_MANAGER")
-            row.label(text=reference["name"])
+            row.label(text=reference.get("name", "") or "Unnamed")
+            
+            if reference.get("location"):
+                if reference["location"].lower().endswith(".ifc"):
+                    row.operator("bim.open_ifc_document", icon="HIDE_OFF", text="").uri = reference["location"]
+                row.operator("bim.open_uri", icon="URL", text="").uri = reference["location"]
+                
             row.operator("bim.unassign_library_reference", text="", icon="X").reference = reference["id"]
+    
+    def draw_add_ui(self):
+        if not self.props.editing_mode == "REFERENCES":
+            row = self.layout.row(align=True)
+            row.operator("bim.load_library", text="Assign Library References", icon="ADD")
+            return
+
+        row = self.layout.row(align=True)
+        row.alignment = "RIGHT"
+
+        if self.props.references and self.props.active_reference_index < len(self.props.references):
+            reference = self.props.references[self.props.active_reference_index]
+            row.operator("bim.assign_library_reference", text="", icon="ADD").reference = reference.ifc_definition_id
+        row.operator("bim.disable_editing_library_references", text="", icon="CANCEL")
+
+        self.layout.template_list(
+            "BIM_UL_object_library_references", 
+            "", 
+            self.props, 
+            "references", 
+            self.props, 
+            "active_reference_index"
+        )
 
 
 class BIM_UL_library_references(UIList):

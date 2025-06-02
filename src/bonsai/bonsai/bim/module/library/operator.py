@@ -156,3 +156,22 @@ class UnassignLibraryReference(bpy.types.Operator, tool.Ifc.Operator):
         core.unassign_library_reference(
             tool.Ifc, obj=context.active_object, reference=tool.Ifc.get().by_id(self.reference)
         )
+
+class LoadProjectLibraries(bpy.types.Operator, tool.Ifc.Operator):
+    bl_idname = "bim.load_project_libraries"
+    bl_label = "Load Project Libraries"
+    bl_options = {"REGISTER", "UNDO"}
+
+    def _execute(self, context):
+        core.load_project_libraries(tool.Library)
+        tool.Library.get_library_props().editing_mode = "READONLY"
+        return {"FINISHED"}
+
+class DisableLibraryEditingUI(bpy.types.Operator, tool.Ifc.Operator):
+    bl_idname = "bim.disable_library_editing_ui"
+    bl_label = "Disable Library Editing UI"
+    bl_options = {"REGISTER", "UNDO"}
+
+    def _execute(self, context):
+#        core.disable_editing_library(tool.Library)
+        core.disable_library_editing_ui(tool.Library)

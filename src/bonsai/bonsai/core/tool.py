@@ -297,6 +297,23 @@ class Document:
     def remove_latest_breadcrumb(cls): pass
     def set_active_document(cls, document): pass
 
+@interface
+class DocumentLibrary:
+    def add_breadcrumb(cls, doclib_entity): pass
+    def clear_breadcrumbs(cls): pass
+    def clear_document_library_tree(cls): pass
+    def disable_editing_document_library(cls): pass
+    def disable_document_library_editing_ui(cls): pass
+    def enable_document_library_editing_ui(cls): pass
+    def export_document_library_attributes(cls): pass
+    def get_active_breadcrumb(cls): pass
+    def import_document_library_attributes(cls, doclib_entity): pass
+    def import_project_document_libraries(cls): pass
+    def import_references(cls, doclib_entity): pass
+    def import_sublibraries(cls, doclib_entity): pass
+    def is_library_information(cls, doclib_entity): pass
+    def remove_latest_breadcrumb(cls): pass
+    def set_active_document_library(cls, doclib_entity): pass
 
 @interface
 class Drawing:

@@ -40,8 +40,8 @@ def enable_editing_library_references(library_tool: tool.Library, library: ifcop
 
 
 def disable_editing_library_references(library: tool.Library) -> None:
-    library.clear_editing_mode()
-    library.set_active_library(None)
+    library.set_editing_mode("LIBRARY")
+    library.import_library_attributes(library.get_active_library())
 
 
 def enable_editing_library(library: tool.Library) -> None:
@@ -50,8 +50,7 @@ def enable_editing_library(library: tool.Library) -> None:
 
 
 def disable_editing_library(library: tool.Library) -> None:
-    library.set_editing_mode("REFERENCES")
-
+    library.disable_editing_library()
 
 def edit_library(ifc: tool.Ifc, library: tool.Library) -> None:
     library.set_editing_mode("REFERENCES")
@@ -97,3 +96,12 @@ def assign_library_reference(ifc: tool.Ifc, obj: bpy.types.Object, reference: if
 
 def unassign_library_reference(ifc: tool.Ifc, obj: bpy.types.Object, reference: ifcopenshell.entity_instance) -> None:
     ifc.run("library.unassign_reference", products=[ifc.get_entity(obj)], reference=reference)
+
+def load_project_libraries(library_tool: tool.Library) -> None:
+    library_tool.import_libraries()
+    library_tool.clear_library_tree()
+    library_tool.set_editing_mode("REFERENCES")
+
+def disable_library_editing_ui(library: tool.Library) -> None:
+    library.disable_editing_ui()
+    library.disable_editing_library()

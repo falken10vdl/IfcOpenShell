@@ -21,12 +21,7 @@ import ifcopenshell.guid
 import ifcopenshell.api.owner
 from typing import Optional
 
-
-def add_information(
-    file: ifcopenshell.file, parent: Optional[ifcopenshell.entity_instance] = None
-) -> ifcopenshell.entity_instance:
-    """Adds a new library information to the project"""
-    # Create appropriate attributes based on schema
+def add_information(file: ifcopenshell.file, parent: Optional[ifcopenshell.entity_instance] = None) -> ifcopenshell.entity_instance:
     if file.schema == "IFC2X3":
         attributes = {"LibraryReference": "X", "Name": "UnnamedInformation"}
     else:
@@ -38,24 +33,13 @@ def add_information(
         parent = file.by_type("IfcProject")[0]
         
     if parent:
-        if parent.is_a("IfcProject") or parent.is_a("IfcContext"):
-            # Connect to project
-            file.create_entity(
-                "IfcRelAssociatesLibrary",
-                GlobalId=ifcopenshell.guid.new(),
-                OwnerHistory=ifcopenshell.api.owner.create_owner_history(file),
-                RelatingLibrary=information,
-                RelatedObjects=[parent],
-            )
-        elif parent.is_a("IfcLibraryInformation"):
-            # For library to library nesting, create a relationship where
-            # information is RelatingLibrary and parent is in RelatedObjects
-            rel = file.create_entity(
-                "IfcRelAssociatesLibrary",
-                GlobalId=ifcopenshell.guid.new(),
-                OwnerHistory=ifcopenshell.api.owner.create_owner_history(file),
-                RelatingLibrary=information,
-                RelatedObjects=[parent],
-            )
+        file.create_entity(
+            "IfcRelAssociatesLibrary",
+            GlobalId=ifcopenshell.guid.new(),
+            OwnerHistory=ifcopenshell.api.owner.create_owner_history(file),
+            RelatingLibrary=information,
+            RelatedObjects=[parent],
+        )
     
     return information
+

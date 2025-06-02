@@ -29,6 +29,8 @@ classes = (
     operator.EditLibrary,
     operator.EditLibraryReference,
     operator.EnableEditingLibrary,
+    operator.LoadProjectLibraries,
+    operator.DisableLibraryEditingUI,
     operator.EnableEditingLibraryReference,
     operator.EnableEditingLibraryReferences,
     operator.RemoveLibrary,
@@ -37,7 +39,7 @@ classes = (
     prop.LibraryReference,
     prop.BIMLibraryProperties,
     ui.BIM_PT_libraries,
-    ui.BIM_PT_library_references,
+    ui.BIM_PT_object_libraries,
     ui.BIM_UL_library_references,
     ui.BIM_UL_object_library_references,
 )

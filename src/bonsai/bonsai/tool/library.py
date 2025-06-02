@@ -99,3 +99,40 @@ class Library(bonsai.core.tool.Library):
     def set_editing_mode(cls, mode: Literal["LIBRARY", "REFERENCES", "REFERENCE"]) -> None:
         props = cls.get_library_props()
         props.editing_mode = mode
+
+
+    @classmethod
+    def clear_library_tree(cls) -> None:
+        props = cls.get_library_props()
+        props.references.clear()
+
+    @classmethod
+    def import_libraries(cls) -> None:
+        props = cls.get_library_props()
+        props.references.clear()
+        
+        library_references = []
+        ifc_file = tool.Ifc.get()
+        
+        for library in ifc_file.by_type("IfcLibraryReference"):
+            library_references.append(library)
+        
+        for reference in library_references:
+            new = props.references.add()
+            if tool.Ifc.get_schema() == "IFC2X3":
+                new.name = reference.Name or reference.ItemReference or f"#{reference.id()}"
+                new.identification = reference.ItemReference or ""
+            else:
+                new.name = reference.Name or reference.Identification or f"#{reference.id()}"
+                new.identification = reference.Identification or ""
+            new.ifc_definition_id = reference.id()
+    
+    @classmethod
+    def disable_editing_library(cls) -> None:
+        props = cls.get_library_props()
+        props.active_library_id = 0
+
+    @classmethod
+    def disable_editing_ui(cls) -> None:
+        props = cls.get_library_props()
+        props.editing_mode = "NONE"

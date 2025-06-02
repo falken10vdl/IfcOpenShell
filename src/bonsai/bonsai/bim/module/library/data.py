@@ -16,6 +16,8 @@
 # You should have received a copy of the GNU General Public License
 # along with Bonsai.  If not, see <http://www.gnu.org/licenses/>.
 
+
+import os
 import bpy
 import bonsai.tool as tool
 
@@ -96,16 +98,40 @@ class LibraryReferencesData:
     @classmethod
     def references(cls):
         results = []
-        for rel in getattr(tool.Ifc.get_entity(bpy.context.active_object), "HasAssociations", []):
+        element = tool.Ifc.get_entity(bpy.context.active_object)
+        if not element:
+            return results
+            
+        for rel in getattr(element, "HasAssociations", []):
             if rel.is_a("IfcRelAssociatesLibrary"):
                 library = rel.RelatingLibrary
+                
+                if tool.Ifc.get_schema() == "IFC2X3":
+                    identification = library.ItemReference
+                else:
+                    identification = library.Identification
+                    
+                name = library.Name or "Unnamed"
+                
+                location = getattr(library, "Location", None)
+                
+                if tool.Ifc.get_schema() != "IFC2X3" and hasattr(library, "ReferencedSource"):
+                    referenced_source = library.ReferencedSource
+                    if referenced_source and location is None:
+                        location = getattr(referenced_source, "Location", None)
+                
+                if location:
+                    if not "://" in location:
+                        if not os.path.isabs(location):
+                            location = os.path.abspath(os.path.join(os.path.dirname(tool.Ifc.get_path()), location))
+                        location = "file://" + location
+                
                 results.append(
                     {
                         "id": library.id(),
-                        "identification": (
-                            library.ItemReference if tool.Ifc.get_schema() == "IFC2X3" else library.Identification
-                        ),
-                        "name": library.Name or "Unnamed",
+                        "identification": identification,
+                        "name": name,
+                        "location": location,
                     }
                 )
         return results

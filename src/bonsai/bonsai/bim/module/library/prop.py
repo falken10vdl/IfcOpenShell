@@ -39,6 +39,8 @@ def update_active_reference_index(self, context):
 
 
 def update_library_element_name(self: "LibraryReference", context: bpy.types.Context):
+    if not self.ifc_definition_id:
+        return
     ifc_file = tool.Ifc.get()
     element = ifc_file.by_id(self.ifc_definition_id)
     previous_name = element.Name
@@ -62,6 +64,7 @@ class BIMLibraryProperties(PropertyGroup):
         name="Editing Mode",
         items=(
             ("NONE", "NONE", ""),
+            ("READONLY", "READONLY", ""),
             ("LIBRARY", "LIBRARY", ""),
             ("REFERENCES", "REFERENCES", ""),
             ("REFERENCE", "REFERENCE", ""),

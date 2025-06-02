@@ -51,9 +51,15 @@ def add_reference(file: ifcopenshell.file, library: ifcopenshell.entity_instance
             reference=reference, attributes={"Identification": "http://example.org/digitaltwin#AHU01"})
     """
     if file.schema == "IFC2X3":
-        reference = file.createIfcLibraryReference()
+        # Create reference with default Name for IFC2X3
+        reference = file.createIfcLibraryReference(Name="UnnamedReference")
         references = list(library.LibraryReference or [])
         references.append(reference)
         library.LibraryReference = references
         return reference
-    return file.createIfcLibraryReference(ReferencedLibrary=library)
+    
+    # For IFC4 and later schemas
+    return file.createIfcLibraryReference(
+        ReferencedLibrary=library,
+        Name="UnnamedReference"
+    )

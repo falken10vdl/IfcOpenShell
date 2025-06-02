@@ -24,24 +24,30 @@ system, and so on. This is typically useful in smart building systems.
 """
 
 from .. import wrap_usecases
+from .add_information import add_information
 from .add_library import add_library
 from .add_reference import add_reference
 from .assign_reference import assign_reference
 from .edit_library import edit_library
+from .edit_information import edit_information
 from .edit_reference import edit_reference
 from .remove_library import remove_library
 from .remove_reference import remove_reference
+from .remove_information import remove_information
 from .unassign_reference import unassign_reference
 
 wrap_usecases(__path__, __name__)
 
 __all__ = [
+    "add_information",
     "add_library",
     "add_reference",
     "assign_reference",
     "edit_library",
+    "edit_information",
     "edit_reference",
     "remove_library",
     "remove_reference",
+    "remove_information",
     "unassign_reference",
 ]
