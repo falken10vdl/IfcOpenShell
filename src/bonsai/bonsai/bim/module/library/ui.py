@@ -119,7 +119,6 @@ class BIM_PT_object_libraries(Panel):
     bl_space_type = "PROPERTIES"
     bl_region_type = "WINDOW"
     bl_context = "object"
-    bl_order = 2
     bl_parent_id = "BIM_PT_tab_misc"
 
     @classmethod

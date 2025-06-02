@@ -52,13 +52,20 @@ class DocumentLibraryData:
 
     @classmethod
     def total_information(cls):
-        return len(
-            [
-                rel
-                for rel in tool.Ifc.get().by_type("IfcProject")[0].HasAssociations or []
-                if rel.is_a("IfcRelAssociatesLibrary") and rel.RelatingLibrary.is_a("IfcLibraryInformation")
-            ]
-        )
+        ifc_file = tool.Ifc.get()
+        if not ifc_file:
+            return 0
+            
+        all_libraries = ifc_file.by_type("IfcLibraryInformation")
+        
+        child_libraries = set()
+        for rel in ifc_file.by_type("IfcRelAssociatesLibrary"):
+            if rel.RelatingLibrary.is_a("IfcLibraryInformation"):
+                for obj in rel.RelatedObjects:
+                    if obj.is_a("IfcLibraryInformation"):
+                        child_libraries.add(obj.id())
+        
+        return len([lib for lib in all_libraries if lib.id() not in child_libraries])
 
     @classmethod
     def parent_document_library(cls):
@@ -89,11 +96,12 @@ class ObjectDocumentLibraryData:
             return results
         for rel in getattr(element, "HasAssociations", []):
             if rel.is_a("IfcRelAssociatesLibrary"):
-                if not rel.RelatingLibrary.is_a(("IfcLibraryReference", "IfcLibraryInformation")):
+                # Check if RelatingLibrary is one of the acceptable types
+                if not (rel.RelatingLibrary.is_a("IfcLibraryReference") or rel.RelatingLibrary.is_a("IfcLibraryInformation")):
                     continue
 
                 name = rel.RelatingLibrary.Name
-                identification = getattr(rel.RelatingLibrary, "Identification", None) or "*"
+                identification = getattr(rel.RelatingLibrary, "Identification", None) or ""
                 location = getattr(rel.RelatingLibrary, "Location", None)
                 
                 # Handle references to external sources

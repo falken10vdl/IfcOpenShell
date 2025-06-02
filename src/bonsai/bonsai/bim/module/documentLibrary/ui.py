@@ -32,6 +32,7 @@ class BIM_PT_document_libraries(Panel):
     bl_region_type = "WINDOW"
     bl_context = "scene"
     bl_parent_id = "BIM_PT_tab_project_setup"
+    bl_order = 2
 
     @classmethod
     def poll(cls, context):
@@ -45,7 +46,7 @@ class BIM_PT_document_libraries(Panel):
 
         row = self.layout.row(align=True)
         row.label(
-            text="{} Document Libraries Found".format(DocumentLibraryData.data.get("total_information", 0)),
+            text="{} Root Document Libraries Found".format(DocumentLibraryData.data.get("total_information", 0)),
             icon="FILE",
         )
 
@@ -102,7 +103,7 @@ class BIM_PT_object_document_libraries(Panel):
     bl_space_type = "PROPERTIES"
     bl_region_type = "WINDOW"
     bl_context = "object"
-    bl_order = 1
+    bl_order = 2
     bl_parent_id = "BIM_PT_tab_misc"
 
     @classmethod
@@ -133,7 +134,7 @@ class BIM_PT_object_document_libraries(Panel):
         # Otherwise, show each library
         for doclib in ObjectDocumentLibraryData.data["document_libraries"]:
             row = self.layout.row(align=True)
-            row.label(text=doclib["identification"] or "*", icon="FILE")
+            row.label(text=doclib["identification"] or "", icon="FILE")
             row.label(text=doclib["name"] or "Unnamed")
             if doclib["location"]:
                 if doclib["location"].lower().endswith(".ifc"):
@@ -174,11 +175,12 @@ class BIM_PT_object_document_libraries(Panel):
 
 class BIM_UL_document_libraries(UIList):
     """List UI for Document Libraries."""
+
     def get_referenced_objects(self, library_id):
-        """Get names of objects referenced by the given library."""
+        """Get names of objects referenced by this document"""
         if not DocumentLibraryData.is_loaded:
             DocumentLibraryData.load()
-        return DocumentLibraryData.data.get("library_references", {}).get(library_id, [])
+        return DocumentLibraryData.data["document_library_references"].get(library_id, [])
 
     def draw_item(self, context, layout, data, item, icon, active_data, active_propname):
         if item:
@@ -225,8 +227,9 @@ def add_object_document_libraries_context_menu(self, context):
     if not obj or not tool.Blender.get_ifc_definition_id(obj):
         return
 
-    self.layout.separator()
     self.layout.menu("BIM_MT_object_document_libraries_context_menu", icon="FILE")
+    self.layout.separator()
+
 
 
 class BIM_MT_object_document_libraries_context_menu(bpy.types.Menu):
@@ -258,8 +261,18 @@ class BIM_MT_object_document_libraries_context_menu(bpy.types.Menu):
         else:
             for doclib in ObjectDocumentLibraryData.data["document_libraries"]:
                 row = layout.row(align=True)
-                if doclib["location"]:
-                    if doclib["location"].lower().endswith(".ifc"):
-                        row.operator("bim.open_ifc_document_library", icon="HIDE_OFF", text="").uri = doclib["location"]
+                row.alignment = 'LEFT'
+                
+                with_ifc_icon = doclib["location"] and doclib["location"].lower().endswith(".ifc")
+                if with_ifc_icon:
+                    row.operator("bim.open_ifc_document_library", icon="HIDE_OFF", text="").uri = doclib["location"]
+                else:
+                    row.label(text="", icon="BLANK1")
+                
+                with_url_icon = bool(doclib["location"])
+                if with_url_icon:
                     row.operator("bim.open_uri", icon="URL", text="").uri = doclib["location"]
-                row.label(text=f"{doclib['identification'] or '*'}: {doclib['name'] or 'Unnamed'}")
+                else:
+                    row.label(text="", icon="BLANK1")
+                
+                row.label(text=f"{doclib['identification'] or ''}: {doclib['name'] or 'Unnamed'}")

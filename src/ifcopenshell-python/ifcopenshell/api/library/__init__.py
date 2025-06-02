@@ -35,6 +35,7 @@ from .remove_library import remove_library
 from .remove_reference import remove_reference
 from .remove_information import remove_information
 from .unassign_reference import unassign_reference
+from .assign_library import assign_library
 
 wrap_usecases(__path__, __name__)
 
@@ -50,4 +51,5 @@ __all__ = [
     "remove_reference",
     "remove_information",
     "unassign_reference",
+    "assign_library",
 ]

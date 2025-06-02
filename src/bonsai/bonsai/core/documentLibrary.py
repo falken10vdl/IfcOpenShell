@@ -30,13 +30,13 @@ def load_project_document_libraries(document_library: tool.DocumentLibrary) -> N
     document_library.import_project_document_libraries()
     document_library.enable_document_library_editing_ui()
 
-def load_document_library(document_library_tool: tool.DocumentLibrary, doclib_entity: ifcopenshell.entity_instance) -> None:
+def load_document_library(document_library_tool: tool.DocumentLibrary, document_library: ifcopenshell.entity_instance) -> None:
     """Load the sub-libraries and references for the given document library entity."""
     document_library_tool.clear_document_library_tree()
-    document_library_tool.import_sublibraries(doclib_entity)
-    document_library_tool.import_references(doclib_entity)
+    document_library_tool.import_sublibraries(document_library)
+    document_library_tool.import_references(document_library)
     document_library_tool.disable_editing_document_library()
-    document_library_tool.add_breadcrumb(doclib_entity)
+    document_library_tool.add_breadcrumb(document_library)
 
 def load_parent_document_library(document_library: tool.DocumentLibrary) -> None:
     """Load the parent library from the breadcrumb trail (similar to load_parent_document)."""
@@ -59,11 +59,11 @@ def disable_document_library_editing_ui(document_library: tool.DocumentLibrary) 
     document_library.disable_document_library_editing_ui()
     document_library.disable_editing_document_library()
 
-def enable_editing_document_library(document_library_tool: tool.DocumentLibrary, doclib_entity: ifcopenshell.entity_instance) -> None:
+def enable_editing_document_library(document_library_tool: tool.DocumentLibrary, document_library: ifcopenshell.entity_instance) -> None:
     """Enable editing mode for a specific document library entity."""
-    document_library_tool.import_document_library_attributes(doclib_entity)
-    document_library_tool.load_referenceable_objects(doclib_entity)
-    document_library_tool.set_active_document_library(doclib_entity)
+    document_library_tool.import_document_library_attributes(document_library)
+    document_library_tool.load_referenceable_objects(document_library)
+    document_library_tool.set_active_document_library(document_library)
 
 def disable_editing_document_library(document_library: tool.DocumentLibrary) -> None:
     """Disable editing for the currently active document library."""
@@ -91,19 +91,19 @@ def add_library_reference(ifc: tool.Ifc, document_library: tool.DocumentLibrary)
     document_library.import_sublibraries(parent)
     document_library.import_references(parent)
 
-def edit_document_library(ifc: tool.Ifc, document_library_tool: tool.DocumentLibrary, doclib_entity: ifcopenshell.entity_instance) -> None:
+def edit_document_library(ifc: tool.Ifc, document_library_tool: tool.DocumentLibrary, document_library: ifcopenshell.entity_instance) -> None:
     """Edit a document library entity and update any selected object references."""
     attributes = document_library_tool.export_document_library_attributes()
-    if document_library_tool.is_library_information(doclib_entity):
-        ifc.run("library.edit_information", information=doclib_entity, attributes=attributes)
+    if document_library_tool.is_library_information(document_library):
+        ifc.run("library.edit_information", information=document_library, attributes=attributes)
     else:
-        ifc.run("library.edit_reference", reference=doclib_entity, attributes=attributes)
+        ifc.run("library.edit_reference", reference=document_library, attributes=attributes)
 
     props = document_library_tool.get_document_library_props()
     for obj in props.document_library_referenced_objects:
         if obj.is_selected:
             product = ifc.get().by_id(obj.ifc_definition_id)
-            assign_document_library(ifc, product, doclib_entity)
+            assign_document_library(ifc, product, document_library)
 
     document_library_tool.disable_editing_document_library()
     document_library_tool.clear_document_library_tree()
@@ -114,12 +114,12 @@ def edit_document_library(ifc: tool.Ifc, document_library_tool: tool.DocumentLib
     else:
         document_library_tool.import_project_document_libraries()
 
-def remove_document_library(ifc: tool.Ifc, document_library_tool: tool.DocumentLibrary, doclib_entity: ifcopenshell.entity_instance) -> None:
+def remove_document_library(ifc: tool.Ifc, document_library_tool: tool.DocumentLibrary, document_library: ifcopenshell.entity_instance) -> None:
     document_library_tool.clear_document_library_tree()
-    if document_library_tool.is_library_information(doclib_entity):
-        ifc.run("library.remove_information", information=doclib_entity)
+    if document_library_tool.is_library_information(document_library):
+        ifc.run("library.remove_information", information=document_library)
     else:
-        ifc.run("library.remove_reference", reference=doclib_entity)
+        ifc.run("library.remove_reference", reference=document_library)
     parent = document_library_tool.get_active_breadcrumb()
     if parent:
         document_library_tool.import_sublibraries(parent)
@@ -128,11 +128,11 @@ def remove_document_library(ifc: tool.Ifc, document_library_tool: tool.DocumentL
         document_library_tool.import_project_document_libraries()
 
 def assign_document_library(
-    ifc: tool.Ifc, product: ifcopenshell.entity_instance, doclib_entity: ifcopenshell.entity_instance
+    ifc: tool.Ifc, product: ifcopenshell.entity_instance, document_library: ifcopenshell.entity_instance
 ) -> None:
-    ifc.run("library.assign_library", products=[product], library=doclib_entity)
+    ifc.run("library.assign_library", products=[product], library=document_library)
 
 def unassign_document_library(
-    ifc: tool.Ifc, product: ifcopenshell.entity_instance, doclib_entity: ifcopenshell.entity_instance
+    ifc: tool.Ifc, product: ifcopenshell.entity_instance, document_library: ifcopenshell.entity_instance
 ) -> None:
-    ifc.run("library.unassign_library", products=[product], library=doclib_entity)
+    ifc.run("library.unassign_library", products=[product], library=document_library)

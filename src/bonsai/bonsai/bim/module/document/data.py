@@ -50,6 +50,24 @@ class DocumentData:
                 name = obj.Name or f"#{obj.id()}"
                 cls.data["document_references"][doc_id].append(name)
 
+        cls.data["document_information_relationship_objects"] = {}
+        for rel in tool.Ifc.get().by_type("IfcDocumentInformationRelationship"):
+            # The relating document is the "parent" document
+            relating_doc = rel.RelatingDocument
+            relating_doc_id = relating_doc.id()
+            relating_doc_name = relating_doc.Name or f"#{relating_doc_id}"
+            
+            # For each related document, add the relating document to its list
+            for doc in rel.RelatedDocuments:
+                doc_id = doc.id()
+                if doc_id not in cls.data["document_information_relationship_objects"]:
+                    cls.data["document_information_relationship_objects"][doc_id] = []
+                
+                # Add the relating document's name to this document's list
+                cls.data["document_information_relationship_objects"][doc_id].append(
+                    f"↑ {relating_doc_name}"
+                )
+
     @classmethod
     def total_information(cls):
         return len(

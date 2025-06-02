@@ -31,6 +31,7 @@ class BIM_PT_documents(Panel):
     bl_region_type = "WINDOW"
     bl_context = "scene"
     bl_parent_id = "BIM_PT_tab_project_setup"
+    bl_order = 1
 
     @classmethod
     def poll(cls, context):
@@ -43,7 +44,7 @@ class BIM_PT_documents(Panel):
         self.props = tool.Document.get_document_props()
 
         row = self.layout.row(align=True)
-        row.label(text="{} Documents Found".format(DocumentData.data["total_information"]), icon="FILE")
+        row.label(text="{} Root Documents Found".format(DocumentData.data["total_information"]), icon="FILE")
         if self.props.is_editing:
             row.operator("bim.disable_document_editing_ui", text="", icon="CANCEL")
         else:
@@ -156,6 +157,22 @@ class BIM_UL_documents(UIList):
         if not DocumentData.is_loaded:
             DocumentData.load()
         return DocumentData.data["document_references"].get(document_id, [])
+    
+    def get_document_information_relationship_objects(self, document_id):
+        """Get names of related documents in IfcDocumentInformationRelationship"""
+        if not DocumentData.is_loaded:
+            DocumentData.load()
+        
+        # Add debug print to check what's happening
+        relationship_objects = DocumentData.data.get("document_information_relationship_objects", {})
+        doc_objects = relationship_objects.get(document_id, [])
+        
+        # Print for debugging with document names
+        print(f"Document {document_id} has {len(doc_objects)} related documents")
+        print(f"Related document names: {doc_objects}")
+        print(f"All keys: {list(relationship_objects.keys())}")
+            
+        return doc_objects
 
     def draw_item(self, context, layout, data, item, icon, active_data, active_propname):
         if item:
@@ -175,11 +192,16 @@ class BIM_UL_documents(UIList):
             split2.prop(item, "name", text="", emboss=False)
 
             split3 = split2.split()
+            
             referenced_objects = self.get_referenced_objects(item.ifc_definition_id)
-            if referenced_objects:
-                object_names = ", ".join(referenced_objects[:3])
-                if len(referenced_objects) > 3:
-                    object_names += f" +{len(referenced_objects) - 3}"
+            related_documents = self.get_document_information_relationship_objects(item.ifc_definition_id)
+            
+            all_references = referenced_objects + related_documents
+            
+            if all_references:
+                object_names = ", ".join(all_references[:3])
+                if len(all_references) > 3:
+                    object_names += f" +{len(all_references) - 3}"
                 split3.label(text=object_names)
             else:
                 split3.label(text="")
@@ -234,8 +256,18 @@ class BIM_MT_object_documents_context_menu(bpy.types.Menu):
         else:
             for document in ObjectDocumentData.data["documents"]:
                 row = layout.row(align=True)
-                if document["location"]:
-                    if document["location"].lower().endswith(".ifc"):
-                        row.operator("bim.open_ifc_document", icon="HIDE_OFF", text="").uri = document["location"]
+
+                with_ifc_icon = document["location"] and document["location"].lower().endswith(".ifc")
+                with_url_icon = bool(document["location"])
+                
+                if with_ifc_icon:
+                    row.operator("bim.open_ifc_document", icon="HIDE_OFF", text="").uri = document["location"]
+                else:
+                    row.label(text="", icon="BLANK1")
+                
+                if with_url_icon:
                     row.operator("bim.open_uri", icon="URL", text="").uri = document["location"]
-                row.label(text=f"{document['identification'] or '*'}: {document['name'] or 'Unnamed'}")
+                else:
+                    row.label(text="", icon="BLANK1")
+                
+                row.label(text=f"{document['identification'] or ''}: {document['name'] or 'Unnamed'}")

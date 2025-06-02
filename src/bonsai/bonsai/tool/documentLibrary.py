@@ -34,10 +34,10 @@ class DocumentLibrary(bonsai.core.tool.DocumentLibrary):
         return bpy.context.scene.BIMDocumentLibraryProperties
 
     @classmethod
-    def add_breadcrumb(cls, doclib_entity: ifcopenshell.entity_instance) -> None:
+    def add_breadcrumb(cls, document_library: ifcopenshell.entity_instance) -> None:
         props = cls.get_document_library_props()
         new = props.document_library_breadcrumbs.add()
-        new.name = str(doclib_entity.id()) 
+        new.name = str(document_library.id()) 
 
     @classmethod
     def clear_breadcrumbs(cls) -> None:
@@ -76,7 +76,7 @@ class DocumentLibrary(bonsai.core.tool.DocumentLibrary):
             return tool.Ifc.get().by_id(int(props.document_library_breadcrumbs[-1].name))
 
     @classmethod
-    def import_document_library_attributes(cls, doclib_entity: ifcopenshell.entity_instance) -> None:
+    def import_document_library_attributes(cls, document_library: ifcopenshell.entity_instance) -> None:
         props = cls.get_document_library_props()
         props.document_library_attributes.clear()
         
@@ -85,7 +85,7 @@ class DocumentLibrary(bonsai.core.tool.DocumentLibrary):
                 return None
             return None
         
-        bonsai.bim.helper.import_attributes2(doclib_entity, props.document_library_attributes, callback=callback)
+        bonsai.bim.helper.import_attributes2(document_library, props.document_library_attributes, callback=callback)
         
         name_found = False
         for attr in props.document_library_attributes:
@@ -97,10 +97,10 @@ class DocumentLibrary(bonsai.core.tool.DocumentLibrary):
             name_prop = props.document_library_attributes.add()
             name_prop.name = "Name"
             name_prop.data_type = "string"
-            if doclib_entity.is_a("IfcLibraryInformation"):
-                name_prop.string_value = doclib_entity.Name or "UnnamedInformation"
+            if document_library.is_a("IfcLibraryInformation"):
+                name_prop.string_value = document_library.Name or "UnnamedInformation"
             else:
-                name_prop.string_value = doclib_entity.Name or "UnnamedReference"
+                name_prop.string_value = document_library.Name or "UnnamedReference"
 
     @classmethod
     def import_project_document_libraries(cls) -> None:
@@ -134,9 +134,9 @@ class DocumentLibrary(bonsai.core.tool.DocumentLibrary):
                 new.is_information = True
 
     @classmethod
-    def import_references(cls, doclib_entity: ifcopenshell.entity_instance) -> None:
+    def import_references(cls, document_library: ifcopenshell.entity_instance) -> None:
         props = cls.get_document_library_props()
-        references = cls.get_library_references(doclib_entity)
+        references = cls.get_library_references(document_library)
         
         for element in references:
             if element.is_a("IfcLibraryReference"):
@@ -148,7 +148,7 @@ class DocumentLibrary(bonsai.core.tool.DocumentLibrary):
                 new.is_information = False
 
     @classmethod
-    def import_sublibraries(cls, doclib_entity: ifcopenshell.entity_instance) -> None:
+    def import_sublibraries(cls, document_library: ifcopenshell.entity_instance) -> None:
         """Import only true sublibraries, not references"""
         props = cls.get_document_library_props()
         
@@ -156,7 +156,7 @@ class DocumentLibrary(bonsai.core.tool.DocumentLibrary):
         ifc_file = tool.Ifc.get()
         for rel in ifc_file.by_type("IfcRelAssociatesLibrary"):
             # If this library is in the RelatedObjects, the RelatingLibrary is a sublibrary
-            if doclib_entity in rel.RelatedObjects and rel.RelatingLibrary.is_a("IfcLibraryInformation"):
+            if document_library in rel.RelatedObjects and rel.RelatingLibrary.is_a("IfcLibraryInformation"):
                 element = rel.RelatingLibrary
                 new = props.document_libraries.add()
                 new.ifc_definition_id = element.id()
@@ -164,8 +164,8 @@ class DocumentLibrary(bonsai.core.tool.DocumentLibrary):
                 new.is_information = True
 
     @classmethod
-    def is_library_information(cls, doclib_entity: ifcopenshell.entity_instance) -> bool:
-        return doclib_entity.is_a("IfcLibraryInformation")
+    def is_library_information(cls, document_library: ifcopenshell.entity_instance) -> bool:
+        return document_library.is_a("IfcLibraryInformation")
 
     @classmethod
     def remove_latest_breadcrumb(cls) -> None:
@@ -179,19 +179,19 @@ class DocumentLibrary(bonsai.core.tool.DocumentLibrary):
                 print(f"New active breadcrumb: {props.document_library_breadcrumbs[-1].name}")
 
     @classmethod
-    def set_active_document_library(cls, doclib_entity: ifcopenshell.entity_instance) -> None:
+    def set_active_document_library(cls, document_library: ifcopenshell.entity_instance) -> None:
         props = cls.get_document_library_props()
-        props.active_document_library_id = doclib_entity.id()
+        props.active_document_library_id = document_library.id()
     
     @classmethod
-    def get_library_information_id(cls, doclib_entity: ifcopenshell.entity_instance) -> Union[str, None]:
+    def get_library_information_id(cls, document_library: ifcopenshell.entity_instance) -> Union[str, None]:
         """Get IfcLibraryInformation.Identification, compatible with IFC2X3."""
-        return doclib_entity[0]
+        return document_library[0]
 
     @classmethod
-    def set_library_information_id(cls, doclib_entity: ifcopenshell.entity_instance, value: Union[str, None]) -> None:
+    def set_library_information_id(cls, document_library: ifcopenshell.entity_instance, value: Union[str, None]) -> None:
         """Set IfcLibraryInformation.Identification, compatible with IFC2X3."""
-        doclib_entity[0] = value
+        document_library[0] = value
 
     @classmethod
     def get_external_library_reference_id(cls, reference: ifcopenshell.entity_instance) -> Union[str, None]:
@@ -205,21 +205,21 @@ class DocumentLibrary(bonsai.core.tool.DocumentLibrary):
 
     @classmethod
     def get_library_references(
-        cls, doclib_entity: ifcopenshell.entity_instance
+        cls, document_library: ifcopenshell.entity_instance
     ) -> tuple[ifcopenshell.entity_instance, ...]:
         """Get references from a library entity, compatible with IFC2X3."""
-        if doclib_entity.file.schema == "IFC2X3":
-            return doclib_entity.LibraryReferences or ()
-        return doclib_entity.HasLibraryReferences
+        if document_library.file.schema == "IFC2X3":
+            return document_library.LibraryReferences or ()
+        return document_library.HasLibraryReferences
 
     @classmethod
-    def load_referenceable_objects(cls, doclib_entity: ifcopenshell.entity_instance) -> None:
+    def load_referenceable_objects(cls, document_library: ifcopenshell.entity_instance) -> None:
         """Load objects that are referenced by this document library."""
         props = cls.get_document_library_props()
         props.document_library_referenced_objects.clear()
 
         # Get objects referenced by this library using the utility function
-        referenced_products = ifcopenshell.util.element.get_referenced_elements(doclib_entity)
+        referenced_products = ifcopenshell.util.element.get_referenced_elements(document_library)
 
         # Add them to the list
         for product in referenced_products:

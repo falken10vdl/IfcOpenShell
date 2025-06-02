@@ -45,7 +45,7 @@ class LoadDocumentLibrary(bpy.types.Operator):
     document_library: bpy.props.IntProperty()
 
     def execute(self, context):
-        core.load_document_library(tool.DocumentLibrary, doclib_entity=tool.Ifc.get().by_id(self.document_library))
+        core.load_document_library(tool.DocumentLibrary, document_library=tool.Ifc.get().by_id(self.document_library))
         bonsai.bim.handler.refresh_ui_data()  # Update breadcrumbs data.
         return {"FINISHED"}
 
@@ -78,7 +78,7 @@ class EnableEditingDocumentLibrary(bpy.types.Operator):
     document_library: bpy.props.IntProperty()
 
     def execute(self, context):
-        core.enable_editing_document_library(tool.DocumentLibrary, doclib_entity=tool.Ifc.get().by_id(self.document_library))
+        core.enable_editing_document_library(tool.DocumentLibrary, document_library=tool.Ifc.get().by_id(self.document_library))
         return {"FINISHED"}
 
 
@@ -117,7 +117,7 @@ class EditDocumentLibrary(bpy.types.Operator, tool.Ifc.Operator):
 
     def _execute(self, context):
         props = tool.DocumentLibrary.get_document_library_props()
-        core.edit_document_library(tool.Ifc, tool.DocumentLibrary, doclib_entity=tool.Ifc.get().by_id(props.active_document_library_id))
+        core.edit_document_library(tool.Ifc, tool.DocumentLibrary, document_library=tool.Ifc.get().by_id(props.active_document_library_id))
 
 
 class RemoveDocumentLibrary(bpy.types.Operator, tool.Ifc.Operator):
@@ -127,7 +127,7 @@ class RemoveDocumentLibrary(bpy.types.Operator, tool.Ifc.Operator):
     document_library: bpy.props.IntProperty()
 
     def _execute(self, context):
-        core.remove_document_library(tool.Ifc, tool.DocumentLibrary, doclib_entity=tool.Ifc.get().by_id(self.document_library))
+        core.remove_document_library(tool.Ifc, tool.DocumentLibrary, document_library=tool.Ifc.get().by_id(self.document_library))
 
 
 class AssignDocumentLibrary(bpy.types.Operator, tool.Ifc.Operator):
