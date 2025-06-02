@@ -100,19 +100,49 @@ class ObjectDocumentLibraryData:
                 if not (rel.RelatingLibrary.is_a("IfcLibraryReference") or rel.RelatingLibrary.is_a("IfcLibraryInformation")):
                     continue
 
-                name = rel.RelatingLibrary.Name
-                identification = getattr(rel.RelatingLibrary, "Identification", None) or ""
-                location = getattr(rel.RelatingLibrary, "Location", None)
+                library = rel.RelatingLibrary
+                name = library.Name
+                identification = getattr(library, "Identification", None) or ""
+                location = getattr(library, "Location", None)
                 
-                # Handle references to external sources
-                if hasattr(rel.RelatingLibrary, "LibraryReference") and rel.RelatingLibrary.LibraryReference:
+                # Add flag to identify the type and get description for references
+                is_reference = library.is_a("IfcLibraryReference")
+                description = None
+                
+                if is_reference:
+                    # Get description for references
+                    if hasattr(library, "Description") and library.Description:
+                        description = library.Description
+                    
+                    # Handle references to IfcLibraryInformation
+                    if hasattr(library, "ReferencedLibrary") and library.ReferencedLibrary:
+                        ref_lib = library.ReferencedLibrary
+                        # Use referenced library name if reference name is empty
+                        if not name:
+                            name = ref_lib.Name
+                        # Use referenced library identification if reference identification is empty
+                        if not identification:
+                            identification = getattr(ref_lib, "Identification", None) or ""
+                        # Use referenced library location if reference location is empty
+                        if not location and hasattr(ref_lib, "Location"):
+                            location = ref_lib.Location
+                        # Use referenced library description if we don't have one
+                        if not description and hasattr(ref_lib, "Description") and ref_lib.Description:
+                            description = ref_lib.Description
+                
+                # For IFC2X3 compatibility
+                if tool.Ifc.get_schema() == "IFC2X3" and hasattr(library, "LibraryReference") and library.LibraryReference:
+                    lib_ref = library.LibraryReference
                     if not name:
-                        name = rel.RelatingLibrary.LibraryReference.Name
+                        name = lib_ref.Name
                     if not identification:
-                        identification = rel.RelatingLibrary.LibraryReference.Identification
-                    if not location and hasattr(rel.RelatingLibrary.LibraryReference, "Location"):
-                        location = rel.RelatingLibrary.LibraryReference.Location
+                        identification = lib_ref.Identification
+                    if not location and hasattr(lib_ref, "Location"):
+                        location = lib_ref.Location
+                    if not description and hasattr(lib_ref, "Description") and lib_ref.Description:
+                        description = lib_ref.Description
 
+                # Handle file paths for location
                 if location:
                     if not "://" in location:
                         if not os.path.isabs(location):
@@ -121,11 +151,13 @@ class ObjectDocumentLibraryData:
 
                 results.append(
                     {
-                        "id": rel.RelatingLibrary.id(),
+                        "id": library.id(),
                         "identification": identification,
                         "name": name or "Unnamed",
+                        "description": description,  # Add description field
                         "location": location,
-                        "is_information": rel.RelatingLibrary.is_a("IfcLibraryInformation"),
+                        "is_information": library.is_a("IfcLibraryInformation"),
+                        "is_reference": is_reference  # Add flag to identify references
                     }
                 )
         return results

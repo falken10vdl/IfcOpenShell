@@ -118,16 +118,39 @@ class BIM_PT_object_documents(Panel):
         if not ObjectDocumentData.data["documents"]:
             row = self.layout.row(align=True)
             row.label(text="No Documents", icon="FILE")
-
-        for document in ObjectDocumentData.data["documents"]:
-            row = self.layout.row(align=True)
-            row.label(text=document["identification"] or "*", icon="FILE")
-            row.label(text=document["name"] or "Unnamed")
-            if document["location"]:
-                if document["location"].lower().endswith(".ifc"):
-                    row.operator("bim.open_ifc_document", icon="HIDE_OFF", text="").uri = document["location"]
-                row.operator("bim.open_uri", icon="URL", text="").uri = document["location"]
-            row.operator("bim.unassign_document", text="", icon="X").document = document["id"]
+        else:
+            for document in ObjectDocumentData.data["documents"]:
+                row = self.layout.row(align=True)
+                
+                # Get the document entity to check its type
+                doc_entity = None
+                if "id" in document:
+                    doc_entity = tool.Ifc.get().by_id(document["id"])
+                
+                # Use different icons based on document type
+                is_reference = doc_entity and doc_entity.is_a("IfcDocumentReference")
+                doc_icon = "FILE_HIDDEN" if is_reference else "FILE"
+                
+                row.label(text=document["identification"] or "", icon=doc_icon)
+                
+                # Show different text fields based on document type
+                if is_reference:
+                    # For references, show description
+                    display_text = document.get("description") or document.get("name") or "UnnamedReference"
+                else:
+                    # For information, show name
+                    display_text = document.get("name") or document.get("description") or "UnnamedInformation"
+                    
+                row.label(text=display_text)
+                
+                # Location icons
+                if document["location"]:
+                    if document["location"].lower().endswith(".ifc"):
+                        row.operator("bim.open_ifc_document", icon="HIDE_OFF", text="").uri = document["location"]
+                    row.operator("bim.open_uri", icon="URL", text="").uri = document["location"]
+                
+                # Unassign button
+                row.operator("bim.unassign_document", text="", icon="X").document = document["id"]
 
     def draw_add_ui(self):
         if not self.props.is_editing:
@@ -234,6 +257,7 @@ class BIM_MT_object_documents_context_menu(bpy.types.Menu):
 
     def draw(self, context):
         layout = self.layout
+        #layout.label(text="                                                                                                         ")
 
         if not context.selected_objects:
             layout.label(text="No documents", icon="INFO")
@@ -270,4 +294,13 @@ class BIM_MT_object_documents_context_menu(bpy.types.Menu):
                 else:
                     row.label(text="", icon="BLANK1")
                 
-                row.label(text=f"{document['identification'] or ''}: {document['name'] or 'Unnamed'}")
+                doc_entity = None
+                if "id" in document:
+                    doc_entity = tool.Ifc.get().by_id(document["id"])
+
+                if doc_entity and doc_entity.is_a("IfcDocumentReference"):
+                    display_text = document.get("description") or document.get("name") or "Unnamed"
+                else:
+                    display_text = document.get("name") or document.get("description") or "Unnamed"
+
+                row.label(text=f"{document['identification'] or ''}: {display_text}")

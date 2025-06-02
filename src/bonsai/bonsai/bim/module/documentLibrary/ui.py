@@ -135,7 +135,17 @@ class BIM_PT_object_document_libraries(Panel):
         for doclib in ObjectDocumentLibraryData.data["document_libraries"]:
             row = self.layout.row(align=True)
             row.label(text=doclib["identification"] or "", icon="FILE")
-            row.label(text=doclib["name"] or "Unnamed")
+            
+            # Check if this is a library reference and show description if available
+            if "is_reference" in doclib and doclib["is_reference"]:
+                # For references, prefer description over name
+                display_text = doclib.get("description") or doclib["name"] or "Unnamed"
+            else:
+                # For library information, continue using name
+                display_text = doclib["name"] or "Unnamed"
+                
+            row.label(text=display_text)
+            
             if doclib["location"]:
                 if doclib["location"].lower().endswith(".ifc"):
                     row.operator("bim.open_ifc_document_library", icon="HIDE_OFF", text="").uri = doclib["location"]
@@ -239,7 +249,9 @@ class BIM_MT_object_document_libraries_context_menu(bpy.types.Menu):
 
     def draw(self, context):
         layout = self.layout
-
+        # Make the menu wider by using a wide empty label at the top
+        #layout.label(text="                                                                      ")
+        
         if not context.selected_objects:
             layout.label(text="No document libraries", icon="INFO")
             return

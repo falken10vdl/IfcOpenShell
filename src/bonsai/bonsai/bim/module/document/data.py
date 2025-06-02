@@ -111,28 +111,47 @@ class ObjectDocumentData:
                 if not rel.RelatingDocument.is_a("IfcDocumentReference"):
                     continue
 
-                name = rel.RelatingDocument.Name
+                document = rel.RelatingDocument
+                name = document.Name
+                description = None
+
+                # Try to get description directly from DocumentReference
+                if hasattr(document, "Description") and document.Description:
+                    description = document.Description
 
                 if tool.Ifc.get_schema() == "IFC2X3":
-                    if not name and rel.RelatingDocument.ReferenceToDocument:
-                        name = rel.RelatingDocument.ReferenceToDocument[0].Name
+                    if not name and document.ReferenceToDocument:
+                        name = document.ReferenceToDocument[0].Name
+                    
+                    # Try to get description from referenced document in IFC2X3
+                    if not description and document.ReferenceToDocument:
+                        if hasattr(document.ReferenceToDocument[0], "Description"):
+                            description = document.ReferenceToDocument[0].Description
 
-                    identification = rel.RelatingDocument.ItemReference
-                    if not identification and rel.RelatingDocument.ReferenceToDocument:
-                        identification = rel.RelatingDocument.ReferenceToDocument[0].DocumentId
+                    identification = document.ItemReference
+                    if not identification and document.ReferenceToDocument:
+                        identification = document.ReferenceToDocument[0].DocumentId
 
-                    location = rel.RelatingDocument.Location
+                    location = document.Location
                 else:
-                    if not name and rel.RelatingDocument.ReferencedDocument:
-                        name = rel.RelatingDocument.ReferencedDocument.Name
+                    if not name and document.ReferencedDocument:
+                        name = document.ReferencedDocument.Name
+                    
+                    # Try to get description from referenced document in IFC4+
+                    if not description and document.ReferencedDocument:
+                        if hasattr(document.ReferencedDocument, "Description"):
+                            description = document.ReferencedDocument.Description
 
-                    identification = rel.RelatingDocument.Identification
-                    if not identification and rel.RelatingDocument.ReferencedDocument:
-                        identification = rel.RelatingDocument.ReferencedDocument.Identification
+                    identification = document.Identification
+                    if not identification and document.ReferencedDocument:
+                        identification = document.ReferencedDocument.Identification
 
-                    location = rel.RelatingDocument.Location
-                    if location is None and rel.RelatingDocument.ReferencedDocument:
-                        location = rel.RelatingDocument.ReferencedDocument.Location
+                    location = document.Location
+                    if location is None and document.ReferencedDocument:
+                        location = document.ReferencedDocument.Location
+
+                # If we still don't have a description, use name as fallback
+                description = description or name
 
                 if location:
                     if not "://" in location:
@@ -142,9 +161,10 @@ class ObjectDocumentData:
 
                 results.append(
                     {
-                        "id": rel.RelatingDocument.id(),
+                        "id": document.id(),
                         "identification": identification,
                         "name": name,
+                        "description": description,  # Add the description field
                         "location": location,
                     }
                 )
