@@ -88,46 +88,65 @@ class ObjectDocumentData:
         element = tool.Ifc.get_entity(bpy.context.active_object)
         if not element:
             return results
+            
         for rel in getattr(element, "HasAssociations", []):
             if rel.is_a("IfcRelAssociatesDocument"):
-                if not rel.RelatingDocument.is_a("IfcDocumentReference"):
-                    continue
-
-                name = rel.RelatingDocument.Name
-
-                if tool.Ifc.get_schema() == "IFC2X3":
-                    if not name and rel.RelatingDocument.ReferenceToDocument:
-                        name = rel.RelatingDocument.ReferenceToDocument[0].Name
-
-                    identification = rel.RelatingDocument.ItemReference
-                    if not identification and rel.RelatingDocument.ReferenceToDocument:
-                        identification = rel.RelatingDocument.ReferenceToDocument[0].DocumentId
-
-                    location = rel.RelatingDocument.Location
+                document = rel.RelatingDocument
+                
+                # Get common attributes with defaults
+                name = document.Name or "Unnamed"
+                identification = None
+                location = None
+                description = getattr(document, "Description", None)
+                is_reference = document.is_a("IfcDocumentReference")
+                
+                # Handle schema and type-specific attribute retrieval
+                if is_reference:
+                    # Document Reference
+                    if tool.Ifc.get_schema() == "IFC2X3":
+                        if not name and document.ReferenceToDocument:
+                            name = document.ReferenceToDocument[0].Name
+                            
+                        identification = document.ItemReference
+                        if not identification and document.ReferenceToDocument:
+                            identification = document.ReferenceToDocument[0].DocumentId
+                            
+                        location = document.Location
+                    else:
+                        if not name and document.ReferencedDocument:
+                            name = document.ReferencedDocument.Name
+                            
+                        identification = document.Identification
+                        if not identification and document.ReferencedDocument:
+                            identification = document.ReferencedDocument.Identification
+                            
+                        location = document.Location
+                        if location is None and document.ReferencedDocument:
+                            location = document.ReferencedDocument.Location
+                            
+                        # Get description from referenced document if not available in reference
+                        if not description and document.ReferencedDocument:
+                            description = getattr(document.ReferencedDocument, "Description", None)
                 else:
-                    if not name and rel.RelatingDocument.ReferencedDocument:
-                        name = rel.RelatingDocument.ReferencedDocument.Name
-
-                    identification = rel.RelatingDocument.Identification
-                    if not identification and rel.RelatingDocument.ReferencedDocument:
-                        identification = rel.RelatingDocument.ReferencedDocument.Identification
-
-                    location = rel.RelatingDocument.Location
-                    if location is None and rel.RelatingDocument.ReferencedDocument:
-                        location = rel.RelatingDocument.ReferencedDocument.Location
-
+                    # Document Information
+                    identification = document.Identification if hasattr(document, "Identification") else None
+                    location = document.Location if hasattr(document, "Location") else None
+                
+                # Format location paths
                 if location:
                     if not "://" in location:
                         if not os.path.isabs(location):
                             location = os.path.abspath(os.path.join(os.path.dirname(tool.Ifc.get_path()), location))
                         location = "file://" + location
-
-                results.append(
-                    {
-                        "id": rel.RelatingDocument.id(),
-                        "identification": identification,
-                        "name": name,
-                        "location": location,
-                    }
-                )
+                
+                # Add the document to results
+                results.append({
+                    "id": document.id(),
+                    "identification": identification,
+                    "name": name,
+                    "description": description,
+                    "location": location,
+                    "is_reference": is_reference
+                })
+                
         return results

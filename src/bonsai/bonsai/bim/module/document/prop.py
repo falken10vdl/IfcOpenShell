@@ -70,24 +70,35 @@ class DocumentReferencedObject(PropertyGroup):
     is_selected: BoolProperty(name="Is Selected", default=False)
 
 
+def update_active_document(self: "BIMDocumentProperties", context: bpy.types.Context) -> None:
+    tool.Document.update_active_document_referenced_objects()
+
 class BIMDocumentProperties(PropertyGroup):
     document_attributes: CollectionProperty(name="Document Attributes", type=Attribute)
-    active_document_id: IntProperty(name="Active Document Id")
+    active_document_id: IntProperty(name="Active Document Id", update=update_active_document, default=0)
     documents: CollectionProperty(name="Documents", type=Document)
     breadcrumbs: CollectionProperty(name="Breadcrumbs", type=StrProperty)
-    active_document_index: IntProperty(name="Active Document Index")
     is_editing: BoolProperty(name="Is Editing", default=False)
+    is_editing_document: BoolProperty(name="Is Editing Document", default=False)
     document_referenced_objects: CollectionProperty(name="Document Referenced Objects", type=DocumentReferencedObject)
-    active_document_referenced_object_index: IntProperty(name="Active Document Referenced Object Index")
+    active_referenced_object_id: IntProperty(name="Active Referenced Object Id", default=0)
 
     if TYPE_CHECKING:
         document_attributes: bpy.types.bpy_prop_collection_idprop[Attribute]
         active_document_id: int
         documents: bpy.types.bpy_prop_collection_idprop[Document]
         breadcrumbs: bpy.types.bpy_prop_collection_idprop[StrProperty]
-        active_document_index: int
         is_editing: bool
 
     @property
     def active_document(self) -> Union[Document, None]:
-        return tool.Blender.get_active_uilist_element(self.documents, self.active_document_index)
+        return tool.Blender.get_active_uilist_element(self.documents, self.active_document_id)
+    
+    @property
+    def active_referenced_object(self) -> Union[DocumentReferencedObject, None]:
+        if self.active_referenced_object_id:
+            for obj in self.document_referenced_objects:
+                if obj.ifc_definition_id == self.active_referenced_object_id:
+                    return obj
+        return None
+    

@@ -150,6 +150,7 @@ class Document(bonsai.core.tool.Document):
     def set_active_document(cls, document: ifcopenshell.entity_instance) -> None:
         props = cls.get_document_props()
         props.active_document_id = document.id()
+        cls.update_active_document_referenced_objects()
 
     @classmethod
     def get_document_information_id(cls, document: ifcopenshell.entity_instance) -> Union[str, None]:
@@ -186,17 +187,37 @@ class Document(bonsai.core.tool.Document):
         props = cls.get_document_props()
         props.document_referenced_objects.clear()
 
-        # Get objects referenced by this document using the utility function
         referenced_products = ifcopenshell.util.element.get_referenced_elements(document)
-
-        # Add them to the list
+        
+        product_items = []
         for product in referenced_products:
-            # We only care about physical objects (IfcProducts)
             if not product.is_a("IfcProduct"):
                 continue
 
             obj = tool.Ifc.get_object(product)
             if obj:
-                item = props.document_referenced_objects.add()
-                item.name = obj.name or f"#{product.id()}"
-                item.ifc_definition_id = product.id()
+                name = obj.name or f"#{product.id()}"
+                product_items.append((name.lower(), product.id(), name))
+        
+        product_items.sort()
+        
+        for _, product_id, name in product_items:
+            item = props.document_referenced_objects.add()
+            item.name = name
+            item.ifc_definition_id = product_id
+
+    @classmethod
+    def update_active_document_referenced_objects(cls) -> None:
+        props = cls.get_document_props()
+        props.document_referenced_objects.clear()
+        
+        if not props.documents or props.active_document_id >= len(props.documents):
+            return
+        
+        active_document = props.documents[props.active_document_id]
+        if active_document:
+            document = tool.Ifc.get().by_id(active_document.ifc_definition_id)
+            if document:
+                # Set the active document ID to trigger UI updates
+                props.active_document_id = active_document.ifc_definition_id
+                cls.load_referenceable_objects(document)

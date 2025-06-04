@@ -479,20 +479,19 @@ def draw_filter(
 
 
 def draw_document_referenced_objects(layout, props):
-    if props.active_document_id:
-        box = layout.box()
-
-        header_row = box.row(align=True)
-        header_row.label(text="Referenced Objects:")
+    box = layout.box()
+    header_row = box.row(align=True)
+    header_row.label(text="Referenced Objects:")
+    if props.is_editing_document:
         add_op = header_row.operator("bim.assign_selected_objects_to_document", text="", icon="ADD")
         add_op.document = props.active_document_id
 
-        row = box.row()
-        row.template_list(
-            "BIM_UL_document_referenced_objects",
-            "",
-            props,
-            "document_referenced_objects",
-            props,
-            "active_document_referenced_object_index",
-        )
+    row = box.row()
+    row.template_list(
+        "BIM_UL_document_referenced_objects",
+        "",
+        props,
+        "document_referenced_objects",
+        props,
+        "active_referenced_object_id",
+    )

@@ -61,6 +61,8 @@ def enable_editing_document(document_tool: tool.Document, document: ifcopenshell
     document_tool.import_document_attributes(document)
     document_tool.load_referenceable_objects(document)
     document_tool.set_active_document(document)
+    props = document_tool.get_document_props()
+    props.is_editing_document = True
 
 
 def disable_editing_document(document: tool.Document) -> None:
@@ -109,6 +111,7 @@ def edit_document(ifc: tool.Ifc, document_tool: tool.Document, document: ifcopen
         document_tool.import_references(parent)
     else:
         document_tool.import_project_documents()
+    props.is_editing_document = False
 
 
 def remove_document(ifc: tool.Ifc, document_tool: tool.Document, document: ifcopenshell.entity_instance) -> None:
@@ -135,3 +138,4 @@ def unassign_document(
     ifc: tool.Ifc, product: ifcopenshell.entity_instance, document: ifcopenshell.entity_instance
 ) -> None:
     ifc.run("document.unassign_document", products=[product], document=document)
+

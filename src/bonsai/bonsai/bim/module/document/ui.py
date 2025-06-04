@@ -64,7 +64,7 @@ class BIM_PT_documents(Panel):
 
         active_document = self.props.active_document
 
-        if self.props.active_document_id:
+        if self.props.is_editing_document:
             row.operator("bim.edit_document", text="", icon="CHECKMARK")
             row.operator("bim.disable_editing_document", text="", icon="CANCEL")
         elif active_document:
@@ -76,12 +76,11 @@ class BIM_PT_documents(Panel):
             row.operator("bim.enable_editing_document", text="", icon="GREASEPENCIL").document = ifc_definition_id
             row.operator("bim.remove_document", text="", icon="X").document = ifc_definition_id
 
-        self.layout.template_list("BIM_UL_documents", "", self.props, "documents", self.props, "active_document_index")
-
-        if self.props.active_document_id:
+        self.layout.template_list("BIM_UL_documents", "", self.props, "documents", self.props, "active_document_id")
+        if self.props.is_editing_document:
             draw_attributes(self.props.document_attributes, self.layout)
-            draw_document_referenced_objects(self.layout, self.props)
-
+        draw_document_referenced_objects(self.layout, self.props)
+            
 
 class BIM_PT_object_documents(Panel):
     bl_label = "Documents"
@@ -141,21 +140,23 @@ class BIM_PT_object_documents(Panel):
         else:
             row.alignment = "RIGHT"
 
-        if self.props.documents and self.props.active_document_index < len(self.props.documents):
-            document = self.props.documents[self.props.active_document_index]
+        if self.props.documents and self.props.active_document_id < len(self.props.documents):
+            document = self.props.documents[self.props.active_document_id]
             if not document.is_information:
                 row.operator("bim.assign_document", text="", icon="ADD").document = document.ifc_definition_id
         row.operator("bim.disable_document_editing_ui", text="", icon="CANCEL")
 
-        self.layout.template_list("BIM_UL_documents", "", self.props, "documents", self.props, "active_document_index")
+        self.layout.template_list("BIM_UL_documents", "", self.props, "documents", self.props, "active_document_id")
 
 
 class BIM_UL_documents(UIList):
     def get_referenced_objects(self, document_id):
-        """Get names of objects referenced by this document"""
+        """Get names of objects referenced by this document, sorted alphabetically"""
         if not DocumentData.is_loaded:
             DocumentData.load()
-        return DocumentData.data["document_references"].get(document_id, [])
+        objects = DocumentData.data["document_references"].get(document_id, [])
+        return sorted(objects, key=lambda name: name.lower())
+
 
     def draw_item(self, context, layout, data, item, icon, active_data, active_propname):
         if item:
@@ -171,28 +172,26 @@ class BIM_UL_documents(UIList):
 
             split1 = row.split(factor=0.1)
             split1.prop(item, "identification", text="", emboss=False)
-            split2 = split1.split(factor=0.7)
+            split2 = split1.split(factor=0.9)
             split2.prop(item, "name", text="", emboss=False)
 
-            split3 = split2.split()
-            referenced_objects = self.get_referenced_objects(item.ifc_definition_id)
-            if referenced_objects:
-                object_names = ", ".join(referenced_objects[:3])
-                if len(referenced_objects) > 3:
-                    object_names += f" +{len(referenced_objects) - 3}"
-                split3.label(text=object_names)
-            else:
-                split3.label(text="")
 
 
 class BIM_UL_document_referenced_objects(UIList):
     def draw_item(self, context, layout, data, item, icon, active_data, active_propname):
+        self.props = tool.Document.get_document_props()
         if self.layout_type == "DEFAULT":
             row = layout.row(align=True)
             row.label(text=item.name)
-            op = row.operator("bim.remove_object_from_document_reference", text="", icon="X")
-            op.document = active_data.active_document_id
-            op.object = item.ifc_definition_id
+            if self.props.active_document_id:
+                op = row.operator("bim.remove_object_from_document_reference", text="", icon="X")
+                op.document = active_data.active_document_id
+                op.object = item.ifc_definition_id
+    
+    def item_activated(self, context, index):
+        self.props = tool.Document.get_document_props()
+        if 0 <= index < len(self.props.document_referenced_objects):
+            self.props.active_referenced_object_id = self.props.document_referenced_objects[index].ifc_definition_id
 
 
 def add_object_documents_context_menu(self, context):
@@ -229,13 +228,44 @@ class BIM_MT_object_documents_context_menu(bpy.types.Menu):
         if not ObjectDocumentData.is_loaded:
             ObjectDocumentData.load()
 
-        if not ObjectDocumentData.data["documents"]:
+        documents = ObjectDocumentData.data["documents"]
+        
+        if not documents:
             layout.label(text="No Documents", icon="FILE")
-        else:
-            for document in ObjectDocumentData.data["documents"]:
-                row = layout.row(align=True)
-                if document["location"]:
-                    if document["location"].lower().endswith(".ifc"):
-                        row.operator("bim.open_ifc_document", icon="HIDE_OFF", text="").uri = document["location"]
-                    row.operator("bim.open_uri", icon="URL", text="").uri = document["location"]
-                row.label(text=f"{document['identification'] or '*'}: {document['name'] or 'Unnamed'}")
+            return
+        
+        # Sort documents alphabetically by identification
+        sorted_documents = sorted(
+            documents, 
+            key=lambda doc: (doc.get('identification') or '*').lower()
+        )
+        
+        for document in sorted_documents:
+            row = layout.row(align=True)
+            
+            is_ifc = False
+            has_url = False
+            
+            if document.get("location"):
+                if document["location"].lower().endswith(".ifc"):
+                    is_ifc = True
+                has_url = True
+            
+            if is_ifc:
+                row.operator("bim.open_ifc_document", icon="HIDE_OFF", text="").uri = document["location"]
+            else:
+                row.label(text="", icon="BLANK1")
+
+            if has_url:
+                row.operator("bim.open_uri", icon="URL", text="").uri = document["location"]
+            else:
+                row.label(text="", icon="BLANK1")
+            
+            icon = "FILE_HIDDEN" if document.get("is_reference") else "FILE"
+            
+            if document.get("is_reference") and document.get("description"):
+                display_text = document.get("description")
+            else:
+                display_text = document.get("name") or "Unnamed"
+            
+            row.label(text=f"{document['identification'] or '*'}: {display_text}", icon=icon)

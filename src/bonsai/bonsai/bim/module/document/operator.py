@@ -34,7 +34,13 @@ class LoadProjectDocuments(bpy.types.Operator):
 
     def execute(self, context):
         core.load_project_documents(tool.Document)
-        bonsai.bim.handler.refresh_ui_data()  # Update breadcrumbs data.
+        
+        # Set active document after loading documents to trigger referenced objects update
+        props = tool.Document.get_document_props()
+        if props.documents and len(props.documents) > 0:
+            props.active_document_id = 0
+            
+        bonsai.bim.handler.refresh_ui_data()  # Update breadcrumbs data
         return {"FINISHED"}
 
 
@@ -45,10 +51,15 @@ class LoadDocument(bpy.types.Operator):
     document: bpy.props.IntProperty()
 
     def execute(self, context):
-        core.load_document(tool.Document, document=tool.Ifc.get().by_id(self.document))
-        bonsai.bim.handler.refresh_ui_data()  # Update breadcrumbs data.
+        document_entity = tool.Ifc.get().by_id(self.document)
+        core.load_document(tool.Document, document=document_entity)
+        props = tool.Document.get_document_props()
+        props.active_document_id = 0
+        
+        props.active_document_id = self.document
+        tool.Document.load_referenceable_objects(document_entity)
+        bonsai.bim.handler.refresh_ui_data()  # Update breadcrumbs data
         return {"FINISHED"}
-
 
 class LoadParentDocument(bpy.types.Operator):
     bl_idname = "bim.load_parent_document"
@@ -205,6 +216,9 @@ class AssignSelectedObjectsToDocument(bpy.types.Operator, tool.Ifc.Operator):
         if not selected_objects:
             self.report({"ERROR"}, "No IFC objects selected")
             return
+
+        # Sort selected objects by name before assigning them to maintain order
+        selected_objects.sort(key=lambda obj: obj.name.lower())
 
         for obj in selected_objects:
             ifc_entity = tool.Ifc.get_entity(obj)
