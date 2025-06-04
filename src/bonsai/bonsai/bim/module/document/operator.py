@@ -24,6 +24,7 @@ import ifcopenshell.util.element
 import bonsai.bim.handler
 import bonsai.tool as tool
 import bonsai.core.document as core
+from bonsai.bim.module.document.data import DocumentData
 
 
 class LoadProjectDocuments(bpy.types.Operator):
@@ -46,8 +47,14 @@ class LoadDocument(bpy.types.Operator):
     def execute(self, context):
         core.load_document(tool.Document, document=tool.Ifc.get().by_id(self.document))
         bonsai.bim.handler.refresh_ui_data()  # Update breadcrumbs data.
-        return {"FINISHED"}
 
+        props = tool.Document.get_document_props()
+        if props.documents and props.active_document_index < len(props.documents):
+            document = props.documents[props.active_document_index]
+            if document.ifc_definition_id:
+                DocumentData.load_document_objects_into_props(document.ifc_definition_id)
+                
+        return {"FINISHED"}
 
 class LoadParentDocument(bpy.types.Operator):
     bl_idname = "bim.load_parent_document"

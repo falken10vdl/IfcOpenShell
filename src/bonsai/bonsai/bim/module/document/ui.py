@@ -79,7 +79,29 @@ class BIM_PT_documents(Panel):
 
         if self.props.active_document_id:
             draw_attributes(self.props.document_attributes, self.layout)
-
+        
+        # Add document objects list after the attributes section
+        # Always display document objects section when in editing mode
+        if self.props.is_editing and self.props.documents and self.props.active_document_index < len(self.props.documents):
+            document = self.props.documents[self.props.active_document_index]
+            # Show for all document types, not just references
+            box = self.layout.box()
+            row = box.row()
+            row.label(text="Referenced Objects", icon="OUTLINER_OB_EMPTY")
+            
+            # Always show the template_list even if empty
+            box.template_list(
+                "BIM_UL_document_objects", 
+                "", 
+                self.props, 
+                "document_objects", 
+                self.props, 
+                "active_document_object_index"
+            )
+            
+            # Add a button to refresh the objects list
+            row = box.row()
+            row.operator("bim.update_document_objects", text="Refresh Objects").document_id = document.ifc_definition_id
 
 class BIM_PT_object_documents(Panel):
     bl_label = "Documents"
@@ -164,3 +186,20 @@ class BIM_UL_documents(UIList):
             split1.prop(item, "identification", text="", emboss=False)
             split2 = split1.split(factor=0.9)
             split2.prop(item, "name", text="", emboss=False)
+
+class BIM_UL_document_objects(UIList):
+    def draw_item(self, context, layout, data, item, icon, active_data, active_propname):
+        if item:
+            row = layout.row(align=True)
+            row.prop(item, "name", text="", emboss=False, icon="OBJECT_DATA")
+            row.operator("bim.select_object", text="", icon="RESTRICT_SELECT_OFF").obj_name = item.name
+            
+            # Get the current document ID from the active document
+            props = tool.Document.get_document_props()
+            if props.documents and props.active_document_index < len(props.documents):
+                document = props.documents[props.active_document_index]
+                
+                # Use the existing unassign_document operator
+                op = row.operator("bim.unassign_document", text="", icon="X")
+                op.document = document.ifc_definition_id
+                op.obj = item.name  # Pass the object name

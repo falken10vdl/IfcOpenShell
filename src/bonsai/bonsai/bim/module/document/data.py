@@ -28,6 +28,18 @@ def refresh():
     ObjectDocumentData.is_loaded = False
 
 
+class BIM_OT_update_document_objects(bpy.types.Operator):
+    bl_idname = "bim.update_document_objects"
+    bl_label = "Update Document Objects"
+    bl_description = "Update the list of objects related to the selected document"
+    bl_options = {"REGISTER", "UNDO"}
+    
+    document_id: bpy.props.IntProperty()
+    
+    def execute(self, context):
+        DocumentData.load_document_objects_into_props(self.document_id)
+        return {"FINISHED"}
+
 class DocumentData:
     data = {}
     is_loaded = False
@@ -37,6 +49,7 @@ class DocumentData:
         cls.data = {
             "total_information": cls.total_information(),
             "parent_document": cls.parent_document(),
+            "document_objects": cls.document_objects(),
         }
         cls.is_loaded = True
 
@@ -60,6 +73,42 @@ class DocumentData:
             return str(parent.Identification)
         return ""
 
+    @classmethod
+    def document_objects(cls):
+        """Returns a dictionary mapping document IDs to their referenced objects"""
+        document_objects = {}
+        file = tool.Ifc.get()
+        
+        for rel in file.by_type("IfcRelAssociatesDocument"):
+            document_id = rel.RelatingDocument.id()
+            if document_id not in document_objects:
+                document_objects[document_id] = []
+                
+            for related_object in rel.RelatedObjects:
+                element = related_object
+                obj = tool.Ifc.get_object(element)
+                if obj:
+                    document_objects[document_id].append({
+                        "id": element.id(), 
+                        "name": obj.name,
+                        "obj": obj
+                    })
+                    
+        return document_objects
+
+    @classmethod
+    def load_document_objects_into_props(cls, document_id):
+        """Loads objects related to a document into property collection"""
+        props = tool.Document.get_document_props()
+        props.document_objects.clear()
+        
+        if "document_objects" not in cls.data or document_id not in cls.data["document_objects"]:
+            return
+            
+        for obj_data in cls.data["document_objects"][document_id]:
+            item = props.document_objects.add()
+            item.name = obj_data["name"]
+            item.ifc_definition_id = obj_data["id"]
 
 class ObjectDocumentData:
     data = {}

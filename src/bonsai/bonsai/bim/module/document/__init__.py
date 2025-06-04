@@ -17,7 +17,7 @@
 # along with Bonsai.  If not, see <http://www.gnu.org/licenses/>.
 
 import bpy
-from . import ui, prop, operator
+from . import ui, prop, operator, data
 
 classes = (
     operator.AddDocumentReference,
@@ -33,11 +33,14 @@ classes = (
     operator.RemoveDocument,
     operator.SelectDocumentObjects,
     operator.UnassignDocument,
+    data.BIM_OT_update_document_objects,
     prop.Document,
+    prop.DocumentObject,
     prop.BIMDocumentProperties,
     ui.BIM_PT_documents,
     ui.BIM_PT_object_documents,
     ui.BIM_UL_documents,
+    ui.BIM_UL_document_objects,
 )
 
 

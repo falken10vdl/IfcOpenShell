@@ -63,14 +63,32 @@ class Document(PropertyGroup):
         is_information: bool
         ifc_definition_id: int
 
+class DocumentObject(PropertyGroup):
+    name: StringProperty(name="Name")
+    ifc_definition_id: IntProperty(name="IFC Definition ID")
+    
+    if TYPE_CHECKING:
+        name: str
+        ifc_definition_id: int
+
+
+def update_active_document(self, context):
+    if self.documents and self.active_document_index < len(self.documents):
+        document = self.documents[self.active_document_index]
+        if document.ifc_definition_id:
+            from bonsai.bim.module.document.data import DocumentData
+            DocumentData.load_document_objects_into_props(document.ifc_definition_id)
+
 
 class BIMDocumentProperties(PropertyGroup):
     document_attributes: CollectionProperty(name="Document Attributes", type=Attribute)
     active_document_id: IntProperty(name="Active Document Id")
     documents: CollectionProperty(name="Documents", type=Document)
     breadcrumbs: CollectionProperty(name="Breadcrumbs", type=StrProperty)
-    active_document_index: IntProperty(name="Active Document Index")
+    active_document_index: IntProperty(name="Active Document Index", update=update_active_document)
     is_editing: BoolProperty(name="Is Editing", default=False)
+    document_objects: CollectionProperty(name="Document Objects", type=DocumentObject)
+    active_document_object_index: IntProperty(name="Active Document Object Index")
 
     if TYPE_CHECKING:
         document_attributes: bpy.types.bpy_prop_collection_idprop[Attribute]
@@ -79,6 +97,8 @@ class BIMDocumentProperties(PropertyGroup):
         breadcrumbs: bpy.types.bpy_prop_collection_idprop[StrProperty]
         active_document_index: int
         is_editing: bool
+        document_objects: bpy.types.bpy_prop_collection_idprop[DocumentObject]
+        active_document_object_index: int
 
     @property
     def active_document(self) -> Union[Document, None]:
