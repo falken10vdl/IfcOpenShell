@@ -111,7 +111,8 @@ class Document(bonsai.core.tool.Document):
                     "element": element,
                     "id": element.id(),
                     "name": element.Name or "Unnamed",
-                    "identification": cls.get_document_information_id(element) or ""
+                    "identification": cls.get_document_information_id(element) or "",
+                    "location": element.Location or "",
                 })
         
         # Sort by identification then by name
@@ -124,7 +125,7 @@ class Document(bonsai.core.tool.Document):
             new["name"] = doc["name"]
             new.is_information = True
             new["identification"] = doc["identification"]
-            new.location = doc.get("location", "")
+            new.location = doc["location"]
 
     @classmethod
     def import_references(cls, document: ifcopenshell.entity_instance) -> None:
@@ -144,6 +145,7 @@ class Document(bonsai.core.tool.Document):
                 "name": name,
                 "identification": cls.get_external_reference_id(element) or "",
                 "description": element.Description or "",
+                "location": element.Location or "",
             })
         
         # Sort by identification then by description
@@ -156,7 +158,7 @@ class Document(bonsai.core.tool.Document):
             new["name"] = ref["name"]
             new["identification"] = ref["identification"]
             new["description"] = ref["description"]
-            new.location = ref.get("location", "")
+            new.location = ref["location"]
             new.is_information = False
 
     @classmethod
@@ -170,7 +172,8 @@ class Document(bonsai.core.tool.Document):
                     "element": element,
                     "id": element.id(),
                     "name": element.Name or "Unnamed",
-                    "identification": cls.get_document_information_id(element) or "*"
+                    "identification": cls.get_document_information_id(element) or "*",
+                    "location": element.Location or ""
                 })
             
             # Sort by identification then by name

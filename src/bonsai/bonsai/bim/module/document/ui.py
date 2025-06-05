@@ -220,9 +220,8 @@ class BIM_UL_documents(UIList):
             split1.prop(item, "identification", text="", emboss=False)
             split2 = split1.split(factor=0.8)  # Adjust factor to make room for icons
             split2.prop(item, "name", text="", emboss=False)
-            
-            # URL and IFC document icons
-            if hasattr(item, "location") and item.location:
+
+            if item.location:
                 if item.location.lower().endswith(".ifc"):
                     row.operator("bim.open_ifc_document", icon="HIDE_OFF", text="").uri = item.location
                 row.operator("bim.open_uri", icon="URL", text="").uri = item.location
