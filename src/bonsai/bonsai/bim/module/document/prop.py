@@ -50,17 +50,20 @@ def update_document_identification(self: "Document", context: bpy.types.Context)
 
 
 class Document(PropertyGroup):
-    name: StringProperty(name="Name", update=update_document_name)
-    identification: StringProperty(name="Identification", update=update_document_identification)
-    is_information: BoolProperty(
-        name="Is Information",
-    )
+    name: StringProperty(name="Name")
+    identification: StringProperty(name="Identification")
+    description: StringProperty(name="Description")
+    is_information: BoolProperty(name="Is Information")
     ifc_definition_id: IntProperty(name="IFC Definition ID")
-
+    location: StringProperty(name="Location", default="")
+    
     if TYPE_CHECKING:
+        name: str
         identification: str
+        description: str 
         is_information: bool
         ifc_definition_id: int
+        location: str
 
 class DocumentObject(PropertyGroup):
     name: StringProperty(name="Name")

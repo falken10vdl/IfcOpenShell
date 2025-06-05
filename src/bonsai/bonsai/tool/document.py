@@ -124,6 +124,7 @@ class Document(bonsai.core.tool.Document):
             new["name"] = doc["name"]
             new.is_information = True
             new["identification"] = doc["identification"]
+            new.location = doc.get("location", "")
 
     @classmethod
     def import_references(cls, document: ifcopenshell.entity_instance) -> None:
@@ -155,6 +156,7 @@ class Document(bonsai.core.tool.Document):
             new["name"] = ref["name"]
             new["identification"] = ref["identification"]
             new["description"] = ref["description"]
+            new.location = ref.get("location", "")
             new.is_information = False
 
     @classmethod
@@ -181,6 +183,7 @@ class Document(bonsai.core.tool.Document):
                 new["name"] = doc["name"]
                 new.is_information = True
                 new["identification"] = doc["identification"]
+                new.location = doc.get("location", "")  # Add this line
 
     @classmethod
     def is_document_information(cls, document: ifcopenshell.entity_instance) -> bool:

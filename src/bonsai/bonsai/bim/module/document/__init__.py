@@ -36,6 +36,7 @@ classes = (
     operator.SelectDocumentObjects,
     operator.UnassignDocument,
     operator.UpdateAssignedDocuments,
+    operator.OpenIFCDocument,
     prop.Document,
     prop.DocumentObject,
     prop.AssignedDocument,
@@ -45,12 +46,19 @@ classes = (
     ui.BIM_UL_documents,
     ui.BIM_UL_document_objects,
     ui.BIM_UL_assigned_documents,
+    ui.BIM_MT_object_documents_context_menu,
 )
 
 
 def register():
+    from bpy.types import VIEW3D_MT_object_context_menu
+
     bpy.types.Scene.BIMDocumentProperties = bpy.props.PointerProperty(type=prop.BIMDocumentProperties)
+    VIEW3D_MT_object_context_menu.append(ui.add_object_documents_context_menu)
 
 
 def unregister():
+    from bpy.types import VIEW3D_MT_object_context_menu
+
+    VIEW3D_MT_object_context_menu.remove(ui.add_object_documents_context_menu)
     del bpy.types.Scene.BIMDocumentProperties

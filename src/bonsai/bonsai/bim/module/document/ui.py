@@ -16,6 +16,7 @@
 # You should have received a copy of the GNU General Public License
 # along with Bonsai.  If not, see <http://www.gnu.org/licenses/>.
 
+import bpy
 import bonsai.tool as tool
 from bpy.types import Panel, UIList
 from bonsai.bim.helper import draw_attributes
@@ -205,6 +206,7 @@ class BIM_UL_documents(UIList):
         if item:
             row = layout.row(align=True)
 
+            # Document type icons (information or reference)
             if item.is_information:
                 op = row.operator("bim.load_document", text="", emboss=False, icon="DISCLOSURE_TRI_RIGHT")
                 op.document = item.ifc_definition_id
@@ -213,10 +215,17 @@ class BIM_UL_documents(UIList):
                 row.label(text="", icon="BLANK1")
                 row.label(text="", icon="FILE_HIDDEN")
 
+            # Identification and name
             split1 = row.split(factor=0.1)
             split1.prop(item, "identification", text="", emboss=False)
-            split2 = split1.split(factor=0.9)
+            split2 = split1.split(factor=0.8)  # Adjust factor to make room for icons
             split2.prop(item, "name", text="", emboss=False)
+            
+            # URL and IFC document icons
+            if hasattr(item, "location") and item.location:
+                if item.location.lower().endswith(".ifc"):
+                    row.operator("bim.open_ifc_document", icon="HIDE_OFF", text="").uri = item.location
+                row.operator("bim.open_uri", icon="URL", text="").uri = item.location
     
 class BIM_UL_document_objects(UIList):
     def draw_item(self, context, layout, data, item, icon, active_data, active_propname):
@@ -259,8 +268,75 @@ class BIM_UL_assigned_documents(UIList):
 
             # URL operator if available
             if item.location:
+                if item.location.lower().endswith(".ifc"):
+                    row.operator("bim.open_ifc_document", icon="HIDE_OFF", text="").uri = item.location
                 row.operator("bim.open_uri", icon="URL", text="").uri = item.location
-                
+
+
             # Unassign operator
             op = row.operator("bim.unassign_document", text="", icon="X")
             op.document = item.ifc_definition_id
+
+def add_object_documents_context_menu(self, context):
+    if not context.active_object:
+        return
+
+    if not tool.Blender.get_ifc_definition_id(context.active_object):
+        return
+
+    self.layout.separator()
+    self.layout.menu("BIM_MT_object_documents_context_menu", icon="FILE")
+
+class BIM_MT_object_documents_context_menu(bpy.types.Menu):
+    bl_idname = "BIM_MT_object_documents_context_menu"
+    bl_label = "Documents"
+
+    def draw(self, context):
+        layout = self.layout
+        #layout.label(text="                                                                                                         ")
+
+        if not context.selected_objects:
+            layout.label(text="No documents", icon="INFO")
+            return
+
+        if len(context.selected_objects) > 1:
+            layout.label(text="Select a single object to see its referenced documents", icon="INFO")
+            return
+
+        obj = context.active_object
+        if not obj or not tool.Blender.get_ifc_definition_id(obj):
+            layout.label(text="No documents", icon="INFO")
+            return
+
+        if not ObjectDocumentData.is_loaded:
+            ObjectDocumentData.load()
+
+        if not ObjectDocumentData.data["documents"]:
+            layout.label(text="No Documents", icon="FILE")
+        else:
+            for document in ObjectDocumentData.data["documents"]:
+                row = layout.row(align=True)
+
+                with_ifc_icon = document["location"] and document["location"].lower().endswith(".ifc")
+                with_url_icon = bool(document["location"])
+                
+                if with_ifc_icon:
+                    row.operator("bim.open_ifc_document", icon="HIDE_OFF", text="").uri = document["location"]
+                else:
+                    row.label(text="", icon="BLANK1")
+                
+                if with_url_icon:
+                    row.operator("bim.open_uri", icon="URL", text="").uri = document["location"]
+                else:
+                    row.label(text="", icon="BLANK1")
+                
+                doc_entity = None
+                if "id" in document:
+                    doc_entity = tool.Ifc.get().by_id(document["id"])
+
+                if doc_entity and doc_entity.is_a("IfcDocumentReference"):
+                    display_text = document.get("description") or document.get("name") or "Unnamed"
+                else:
+                    display_text = document.get("name") or document.get("description") or "Unnamed"
+
+                row.label(text=f"{document['identification'] or ''}: {display_text}")

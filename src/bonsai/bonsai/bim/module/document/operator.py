@@ -147,7 +147,17 @@ class EditDocument(bpy.types.Operator, tool.Ifc.Operator):
 
     def _execute(self, context):
         props = tool.Document.get_document_props()
-        core.edit_document(tool.Ifc, tool.Document, document=tool.Ifc.get().by_id(props.active_document_id))
+        if props.active_document_id:
+            core.edit_document(tool.Ifc, tool.Document, document=tool.Ifc.get().by_id(props.active_document_id))
+            props.active_document_id = 0
+            DocumentData.is_loaded = False
+            DocumentData.load()
+            ObjectDocumentData.is_loaded = False  
+            ObjectDocumentData.load()
+            bpy.ops.bim.update_assigned_documents()
+            bonsai.bim.handler.refresh_ui_data()
+
+
 
 
 class RemoveDocument(bpy.types.Operator, tool.Ifc.Operator):
@@ -166,9 +176,9 @@ class UpdateAssignedDocuments(bpy.types.Operator):
     bl_options = {"REGISTER"}
     
     def execute(self, context):
-        # Get data from ObjectDocumentData
-        if not ObjectDocumentData.is_loaded:
-            ObjectDocumentData.load()
+        # Make sure we're working with the latest data
+        ObjectDocumentData.is_loaded = False
+        ObjectDocumentData.load()
             
         # Populate the properties collection
         props = tool.Document.get_document_props()
@@ -190,8 +200,9 @@ class UpdateAssignedDocuments(bpy.types.Operator):
             new.identification = document["identification"] or "*"
             new.is_information = document.get("is_information", False)
             new.ifc_definition_id = document["id"]
-            new.location = document["location"] or ""
-            new.description = document["description"] or ""
+            # Ensure location is properly set
+            new.location = document.get("location") or ""
+            new.description = document.get("description") or ""
             
         return {"FINISHED"}
 
@@ -338,3 +349,46 @@ class LoadObjectDocuments(bpy.types.Operator):
             new.ifc_definition_id = document["id"] 
             new.location = document["location"] or ""
             new.description = document["description"] or ""
+
+class OpenIFCDocument(bpy.types.Operator):
+    bl_idname = "bim.open_ifc_document"
+    bl_label = "Open IFC Document"
+    bl_description = "Open the IFC document in a new Blender instance and load the project"
+    bl_options = {"REGISTER", "UNDO"}
+
+    uri: bpy.props.StringProperty(name="URI")
+
+    def execute(self, context):
+        import subprocess
+        import os
+
+        if not self.uri:
+            self.report({"ERROR"}, "No URI provided")
+            return {"CANCELLED"}
+
+        file_path = self.uri
+        if file_path.startswith("file://"):
+            file_path = file_path[7:]
+        elif file_path.startswith("file:"):
+            file_path = file_path[5:]
+
+        if not os.path.isabs(file_path):
+            file_path = os.path.abspath(file_path)
+
+        if not os.path.exists(file_path):
+            self.report({"ERROR"}, f"IFC file not found: {file_path}")
+            return {"CANCELLED"}
+
+        try:
+            subprocess.Popen(
+                [
+                    "blender",
+                    "--python-expr",
+                    f"import bpy; bpy.ops.bim.load_project(filepath='{file_path}', should_start_fresh_session=True)",
+                ]
+            )
+            self.report({"INFO"}, f"Opening IFC file: {file_path} in a new Blender instance.")
+        except Exception as e:
+            self.report({"ERROR"}, f"Failed to open IFC file: {str(e)}")
+
+        return {"FINISHED"}
