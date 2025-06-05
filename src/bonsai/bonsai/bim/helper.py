@@ -51,6 +51,7 @@ def draw_attributes(
     copy_operator: Optional[str] = None,
     popup_active_attribute: Optional[bonsai.bim.prop.Attribute] = None,
     callback: Optional[Callable[[bonsai.bim.prop.Attribute, bpy.types.UILayout], None]] = None,
+    filter_attributes: list[str] = None,
 ) -> None:
     """Draw editable UI for prop.Attributes.
 
@@ -58,14 +59,20 @@ def draw_attributes(
     meaning you will be able to type into attribute's field without having to click
     on it first
     """
+    if filter_attributes is None:
+        filter_attributes = []
+        
     for attribute in props:
+        # Skip attributes that are in the filter list
+        if attribute.name in filter_attributes:
+            continue
+            
         row = layout.row(align=True)
         if attribute == popup_active_attribute:
             row.activate_init = True
         draw_attribute(attribute, row, copy_operator)
         if callback:
             callback(attribute, row)
-
 
 def draw_attribute(
     attribute: bonsai.bim.prop.Attribute, layout: bpy.types.UILayout, copy_operator: Optional[str] = None

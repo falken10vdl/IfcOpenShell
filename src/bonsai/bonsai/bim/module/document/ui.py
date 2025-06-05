@@ -80,7 +80,10 @@ class BIM_PT_documents(Panel):
         self.layout.template_list("BIM_UL_documents", "", self.props, "documents", self.props, "active_document_index")
 
         if self.props.active_document_id:
-            draw_attributes(self.props.document_attributes, self.layout)
+            if active_document.is_information:
+                draw_attributes(self.props.document_attributes, self.layout)
+            else:
+                draw_attributes(self.props.document_attributes, self.layout, filter_attributes=["Name"])
         
         # Add document objects list after the attributes section
         # Always display document objects section when in editing mode
@@ -336,8 +339,8 @@ class BIM_MT_object_documents_context_menu(bpy.types.Menu):
                     doc_entity = tool.Ifc.get().by_id(document["id"])
 
                 if doc_entity and doc_entity.is_a("IfcDocumentReference"):
-                    display_text = document.get("description") or document.get("name") or "Unnamed"
+                    display_text = document.get("description") or ""
                 else:
-                    display_text = document.get("name") or document.get("description") or "Unnamed"
+                    display_text = document.get("name") or ""
 
                 row.label(text=f"{document['identification'] or ''}: {display_text}")
