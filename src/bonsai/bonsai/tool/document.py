@@ -141,11 +141,12 @@ class Document(bonsai.core.tool.Document):
                 "element": element,
                 "id": element.id(),
                 "name": name,
-                "identification": cls.get_external_reference_id(element) or ""
+                "identification": cls.get_external_reference_id(element) or "",
+                "description": element.Description or "",
             })
         
-        # Sort by identification then by description/name
-        reference_list.sort(key=lambda d: (d["identification"].lower(), d["name"].lower()))
+        # Sort by identification then by description
+        reference_list.sort(key=lambda d: (d["identification"].lower(), d["description"].lower()))
         
         # Add to properties in sorted order
         for ref in reference_list:
@@ -153,6 +154,7 @@ class Document(bonsai.core.tool.Document):
             new.ifc_definition_id = ref["id"]
             new["name"] = ref["name"]
             new["identification"] = ref["identification"]
+            new["description"] = ref["description"]
             new.is_information = False
 
     @classmethod

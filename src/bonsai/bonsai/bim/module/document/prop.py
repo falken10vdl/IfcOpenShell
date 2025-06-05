@@ -54,7 +54,6 @@ class Document(PropertyGroup):
     identification: StringProperty(name="Identification", update=update_document_identification)
     is_information: BoolProperty(
         name="Is Information",
-        description="Whether element is IfcDocumentInformation, otherwise it's IfcDocumentReference.",
     )
     ifc_definition_id: IntProperty(name="IFC Definition ID")
 
@@ -71,6 +70,20 @@ class DocumentObject(PropertyGroup):
         name: str
         ifc_definition_id: int
 
+class AssignedDocument(PropertyGroup):
+    name: StringProperty(name="Name")
+    identification: StringProperty(name="Identification")
+    description: StringProperty(name="Description", default="")
+    is_information: BoolProperty(name="Is Information")
+    ifc_definition_id: IntProperty(name="IFC Definition ID")
+    location: StringProperty(name="Location", default="")
+    
+    if TYPE_CHECKING:
+        name: str
+        identification: str
+        is_information: bool
+        ifc_definition_id: int
+        location: str
 
 def update_active_document(self, context):
     if self.documents and self.active_document_index < len(self.documents):
@@ -87,8 +100,12 @@ class BIMDocumentProperties(PropertyGroup):
     breadcrumbs: CollectionProperty(name="Breadcrumbs", type=StrProperty)
     active_document_index: IntProperty(name="Active Document Index", update=update_active_document)
     is_editing: BoolProperty(name="Is Editing", default=False)
+    is_object_editing: BoolProperty(name="Is Object Editing", default=False)
     document_objects: CollectionProperty(name="Document Objects", type=DocumentObject)
     active_document_object_index: IntProperty(name="Active Document Object Index")
+    assigned_documents: CollectionProperty(name="Assigned Documents", type=AssignedDocument)
+    active_assigned_document_index: IntProperty(name="Active Assigned Document Index")
+
 
     if TYPE_CHECKING:
         document_attributes: bpy.types.bpy_prop_collection_idprop[Attribute]
@@ -97,8 +114,11 @@ class BIMDocumentProperties(PropertyGroup):
         breadcrumbs: bpy.types.bpy_prop_collection_idprop[StrProperty]
         active_document_index: int
         is_editing: bool
+        is_object_editing: bool
         document_objects: bpy.types.bpy_prop_collection_idprop[DocumentObject]
         active_document_object_index: int
+        assigned_documents: bpy.types.bpy_prop_collection_idprop[AssignedDocument]
+        active_assigned_document_index: int
 
     @property
     def active_document(self) -> Union[Document, None]:

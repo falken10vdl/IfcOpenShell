@@ -36,6 +36,8 @@ class DocumentData:
     def load(cls):
         cls.data = {
             "total_information": cls.total_information(),
+            "total_documents": cls.total_documents(),
+            "total_documented_objects": cls.total_documented_objects(),
             "parent_document": cls.parent_document(),
             "document_objects": cls.document_objects(),
         }
@@ -50,6 +52,37 @@ class DocumentData:
                 if rel.is_a("IfcRelAssociatesDocument") and rel.RelatingDocument.is_a("IfcDocumentInformation")
             ]
         )
+
+    @classmethod
+    def total_documents(cls):
+        file = tool.Ifc.get()
+        
+        info_count = len(file.by_type("IfcDocumentInformation"))
+        ref_count = len(file.by_type("IfcDocumentReference"))
+        
+        return info_count + ref_count
+
+    @classmethod
+    def total_documented_objects(cls):
+        """Returns the total number of objects that have document associations"""
+        file = tool.Ifc.get()
+        
+        # Get all IfcRelAssociatesDocument relationships
+        document_rels = file.by_type("IfcRelAssociatesDocument")
+        
+        # Create a set to track unique objects (to avoid counting duplicates if an object 
+        # is associated with multiple documents)
+        documented_objects = set()
+        
+        # Count objects with document associations
+        for rel in document_rels:
+            for related_object in rel.RelatedObjects:
+                # Only count objects that are represented in the Blender scene
+                obj = tool.Ifc.get_object(related_object)
+                if obj:
+                    documented_objects.add(related_object.id())
+        
+        return len(documented_objects)
 
     @classmethod
     def parent_document(cls):
@@ -118,46 +151,70 @@ class ObjectDocumentData:
         element = tool.Ifc.get_entity(bpy.context.active_object)
         if not element:
             return results
+            
         for rel in getattr(element, "HasAssociations", []):
             if rel.is_a("IfcRelAssociatesDocument"):
-                if not rel.RelatingDocument.is_a("IfcDocumentReference"):
+                # Check document type
+                is_information = rel.RelatingDocument.is_a("IfcDocumentInformation")
+                is_reference = rel.RelatingDocument.is_a("IfcDocumentReference")
+                
+                if not (is_information or is_reference):
                     continue
-
+                    
+                # We'll handle both document types
                 name = rel.RelatingDocument.Name
+                location = None
+                identification = None
+                description = None
+                
+                if is_information:
+                    # Handle IfcDocumentInformation
+                    if tool.Ifc.get_schema() == "IFC2X3":
+                        identification = rel.RelatingDocument.DocumentId
+                    else:
+                        identification = rel.RelatingDocument.Identification
+                        
+                    # Information elements typically don't have location directly
+                    location = getattr(rel.RelatingDocument, "Location", None)
+                    
+                else:  # is_reference
+                    # Handle IfcDocumentReference
+                    description = rel.RelatingDocument.Description
+                    if tool.Ifc.get_schema() == "IFC2X3":
+                        if not name and rel.RelatingDocument.ReferenceToDocument:
+                            name = rel.RelatingDocument.ReferenceToDocument[0].Name
 
-                if tool.Ifc.get_schema() == "IFC2X3":
-                    if not name and rel.RelatingDocument.ReferenceToDocument:
-                        name = rel.RelatingDocument.ReferenceToDocument[0].Name
+                        identification = rel.RelatingDocument.ItemReference
+                        if not identification and rel.RelatingDocument.ReferenceToDocument:
+                            identification = rel.RelatingDocument.ReferenceToDocument[0].DocumentId
 
-                    identification = rel.RelatingDocument.ItemReference
-                    if not identification and rel.RelatingDocument.ReferenceToDocument:
-                        identification = rel.RelatingDocument.ReferenceToDocument[0].DocumentId
+                        location = rel.RelatingDocument.Location
+                    else:
+                        if not name and rel.RelatingDocument.ReferencedDocument:
+                            name = rel.RelatingDocument.ReferencedDocument.Name
 
-                    location = rel.RelatingDocument.Location
-                else:
-                    if not name and rel.RelatingDocument.ReferencedDocument:
-                        name = rel.RelatingDocument.ReferencedDocument.Name
+                        identification = rel.RelatingDocument.Identification
+                        if not identification and rel.RelatingDocument.ReferencedDocument:
+                            identification = rel.RelatingDocument.ReferencedDocument.Identification
 
-                    identification = rel.RelatingDocument.Identification
-                    if not identification and rel.RelatingDocument.ReferencedDocument:
-                        identification = rel.RelatingDocument.ReferencedDocument.Identification
+                        location = rel.RelatingDocument.Location
+                        if location is None and rel.RelatingDocument.ReferencedDocument:
+                            location = rel.RelatingDocument.ReferencedDocument.Location
 
-                    location = rel.RelatingDocument.Location
-                    if location is None and rel.RelatingDocument.ReferencedDocument:
-                        location = rel.RelatingDocument.ReferencedDocument.Location
-
+                # Process location to file:// URL if needed
                 if location:
                     if not "://" in location:
                         if not os.path.isabs(location):
                             location = os.path.abspath(os.path.join(os.path.dirname(tool.Ifc.get_path()), location))
                         location = "file://" + location
 
-                results.append(
-                    {
-                        "id": rel.RelatingDocument.id(),
-                        "identification": identification,
-                        "name": name,
-                        "location": location,
-                    }
-                )
+                results.append({
+                    "id": rel.RelatingDocument.id(),
+                    "identification": identification,
+                    "name": name,
+                    "location": location,
+                    "is_information": is_information,
+                    "description": description
+                })
+                
         return results

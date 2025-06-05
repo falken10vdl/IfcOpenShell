@@ -24,7 +24,7 @@ import ifcopenshell.util.element
 import bonsai.bim.handler
 import bonsai.tool as tool
 import bonsai.core.document as core
-from bonsai.bim.module.document.data import DocumentData
+from bonsai.bim.module.document.data import DocumentData, ObjectDocumentData
 
 
 def update_document_objects(document_id=None):
@@ -91,6 +91,15 @@ class DisableDocumentEditingUI(bpy.types.Operator):
         core.disable_document_editing_ui(tool.Document)
         return {"FINISHED"}
 
+class DisableObjectDocumentEditingUI(bpy.types.Operator):
+    bl_idname = "bim.disable_object_document_editing_ui"
+    bl_label = "Disable Object Document Editing UI"
+    bl_options = {"REGISTER", "UNDO"}
+
+    def execute(self, context):
+        props = tool.Document.get_document_props()
+        props.is_object_editing = False
+        return {"FINISHED"}
 
 class EnableEditingDocument(bpy.types.Operator):
     bl_idname = "bim.enable_editing_document"
@@ -150,6 +159,42 @@ class RemoveDocument(bpy.types.Operator, tool.Ifc.Operator):
     def _execute(self, context):
         core.remove_document(tool.Ifc, tool.Document, document=tool.Ifc.get().by_id(self.document))
 
+class UpdateAssignedDocuments(bpy.types.Operator):
+    bl_idname = "bim.update_assigned_documents"
+    bl_label = "Update Assigned Documents"
+    bl_description = "Update the list of documents assigned to the active object"
+    bl_options = {"REGISTER"}
+    
+    def execute(self, context):
+        # Get data from ObjectDocumentData
+        if not ObjectDocumentData.is_loaded:
+            ObjectDocumentData.load()
+            
+        # Populate the properties collection
+        props = tool.Document.get_document_props()
+        props.assigned_documents.clear()
+        
+        if not ObjectDocumentData.data.get("documents"):
+            return {"FINISHED"}
+        
+        # Sort documents by identification then name
+        sorted_docs = sorted(
+            ObjectDocumentData.data["documents"], 
+            key=lambda doc: ((doc.get("identification") or "").lower(), 
+                           (doc.get("name") or "").lower())
+        )
+        
+        for document in sorted_docs:
+            new = props.assigned_documents.add()
+            new.name = document["name"] or "Unnamed"
+            new.identification = document["identification"] or "*"
+            new.is_information = document.get("is_information", False)
+            new.ifc_definition_id = document["id"]
+            new.location = document["location"] or ""
+            new.description = document["description"] or ""
+            
+        return {"FINISHED"}
+
 class AssignDocument(bpy.types.Operator, tool.Ifc.Operator):
     bl_idname = "bim.assign_document"
     bl_label = "Assign Document"
@@ -159,14 +204,24 @@ class AssignDocument(bpy.types.Operator, tool.Ifc.Operator):
     document: bpy.props.IntProperty()
 
     def _execute(self, context):
+        # Get the document to assign
         document = tool.Ifc.get().by_id(self.document)
+        
+        # Get the objects to assign it to
         objs = [bpy.data.objects[self.obj]] if self.obj else tool.Blender.get_selected_objects()
+        
         for obj in objs:
             element = tool.Ifc.get_entity(obj)
             if element:
                 core.assign_document(tool.Ifc, product=element, document=document)
         
+        # Update document objects for the assigned document
         update_document_objects(self.document)
+        
+        # Refresh object document data
+        ObjectDocumentData.is_loaded = False
+        ObjectDocumentData.load()
+        bpy.ops.bim.update_assigned_documents()
 
 
 class UnassignDocument(bpy.types.Operator, tool.Ifc.Operator):
@@ -177,7 +232,10 @@ class UnassignDocument(bpy.types.Operator, tool.Ifc.Operator):
     document: bpy.props.IntProperty()
 
     def _execute(self, context):
+        # Get the document to unassign
         document = tool.Ifc.get().by_id(self.document)
+        
+        # Get the objects to unassign it from
         objs = [bpy.data.objects.get(self.obj)] if self.obj else tool.Blender.get_selected_objects()
         for obj in objs:
             element = tool.Ifc.get_entity(obj)
@@ -185,7 +243,28 @@ class UnassignDocument(bpy.types.Operator, tool.Ifc.Operator):
                 import bonsai.core.document as core
                 core.unassign_document(tool.Ifc, product=element, document=document)
         
-        update_document_objects(self.document)
+        # Get the currently active document in BIM_UL_documents
+        props = tool.Document.get_document_props()
+        active_document_id = None
+        if props.documents and props.active_document_index < len(props.documents):
+            active_document = props.documents[props.active_document_index]
+            active_document_id = active_document.ifc_definition_id
+            
+        # Update the document objects list with objects from the ACTIVE document,
+        # not the one being unassigned (if they're different)
+        if active_document_id and active_document_id != self.document:
+            update_document_objects(active_document_id)
+        else:
+            # If there's no active document or it's the same as the one being unassigned,
+            # then update the objects for the unassigned document
+            update_document_objects(self.document)
+        
+        # Reload the ObjectDocumentData to reflect the removed assignment
+        ObjectDocumentData.is_loaded = False
+        ObjectDocumentData.load()
+        
+        # Update the assigned documents list in the UI
+        bpy.ops.bim.update_assigned_documents()
 
 class SelectDocumentObjects(bpy.types.Operator):
     bl_idname = "bim.select_document_objects"
@@ -207,3 +286,55 @@ class SelectDocumentObjects(bpy.types.Operator):
             i += 1
         self.report({"INFO"}, f"{i} objects selected.")
         return {"FINISHED"}
+
+
+class LoadObjectDocuments(bpy.types.Operator):
+    bl_idname = "bim.load_object_documents"
+    bl_label = "Load Object Documents"
+    bl_description = "Load documents to assign to the selected object"
+    bl_options = {"REGISTER", "UNDO"}
+
+    def execute(self, context):
+        # First make sure ObjectDocumentData is loaded
+        if not ObjectDocumentData.is_loaded:
+            ObjectDocumentData.load()
+            
+        # Load project documents for selection
+        core.load_project_documents(tool.Document)
+        
+        # Set editing mode
+        props = tool.Document.get_document_props()
+        props.is_object_editing = True
+        
+        # Update UI breadcrumbs
+        bonsai.bim.handler.refresh_ui_data()
+        
+        # Update the assigned documents list
+        self.update_assigned_documents(props)
+        
+        return {"FINISHED"}
+    
+    def update_assigned_documents(self, props):
+        # Clear existing assigned documents
+        props.assigned_documents.clear()
+        
+        # Get document data
+        if not ObjectDocumentData.data.get("documents"):
+            return
+            
+        # Sort documents by identification then name
+        sorted_docs = sorted(
+            ObjectDocumentData.data["documents"], 
+            key=lambda doc: ((doc.get("identification") or "").lower(), 
+                           (doc.get("name") or "").lower())
+        )
+        
+        # Add documents to the collection
+        for document in sorted_docs:
+            new = props.assigned_documents.add()
+            new.name = document["name"] or "Unnamed"
+            new.identification = document["identification"] or "*"
+            new.is_information = document.get("is_information", False)
+            new.ifc_definition_id = document["id"] 
+            new.location = document["location"] or ""
+            new.description = document["description"] or ""
