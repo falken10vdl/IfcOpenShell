@@ -84,12 +84,9 @@ class BIM_PT_documents(Panel):
         # Always display document objects section when in editing mode
         if self.props.is_editing and self.props.documents and self.props.active_document_index < len(self.props.documents):
             document = self.props.documents[self.props.active_document_index]
-            # Show for all document types, not just references
             box = self.layout.box()
-            row = box.row()
-            row.label(text="Referenced Objects", icon="OUTLINER_OB_EMPTY")
-            
-            # Always show the template_list even if empty
+            row = box.row(align=True)
+            row.label(text="Assigned Objects", icon="OUTLINER_OB_EMPTY")
             box.template_list(
                 "BIM_UL_document_objects", 
                 "", 
@@ -98,10 +95,6 @@ class BIM_PT_documents(Panel):
                 self.props, 
                 "active_document_object_index"
             )
-            
-            # Add a button to refresh the objects list
-            row = box.row()
-            row.operator("bim.update_document_objects", text="Refresh Objects").document_id = document.ifc_definition_id
 
 class BIM_PT_object_documents(Panel):
     bl_label = "Documents"
@@ -182,11 +175,10 @@ class BIM_UL_documents(UIList):
                 row.label(text="", icon="FILE_HIDDEN")
 
             split1 = row.split(factor=0.1)
-            # split1.label(text=item.identification)
             split1.prop(item, "identification", text="", emboss=False)
             split2 = split1.split(factor=0.9)
             split2.prop(item, "name", text="", emboss=False)
-
+    
 class BIM_UL_document_objects(UIList):
     def draw_item(self, context, layout, data, item, icon, active_data, active_propname):
         if item:

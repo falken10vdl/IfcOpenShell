@@ -101,40 +101,84 @@ class Document(bonsai.core.tool.Document):
         props = cls.get_document_props()
         props.documents.clear()
         project = tool.Ifc.get().by_type("IfcProject")[0]
+        
+        # Collect documents first
+        documents = []
         for rel in project.HasAssociations or []:
             if rel.is_a("IfcRelAssociatesDocument") and rel.RelatingDocument.is_a("IfcDocumentInformation"):
                 element = rel.RelatingDocument
-                new = props.documents.add()
-                new.ifc_definition_id = element.id()
-                new["name"] = element.Name or "Unnamed"
-                new.is_information = True
-                new["identification"] = cls.get_document_information_id(element)
+                documents.append({
+                    "element": element,
+                    "id": element.id(),
+                    "name": element.Name or "Unnamed",
+                    "identification": cls.get_document_information_id(element) or ""
+                })
+        
+        # Sort by identification then by name
+        documents.sort(key=lambda d: (d["identification"].lower(), d["name"].lower()))
+        
+        # Add to properties in sorted order
+        for doc in documents:
+            new = props.documents.add()
+            new.ifc_definition_id = doc["id"]
+            new["name"] = doc["name"]
+            new.is_information = True
+            new["identification"] = doc["identification"]
 
     @classmethod
     def import_references(cls, document: ifcopenshell.entity_instance) -> None:
         props = cls.get_document_props()
         is_ifc2x3 = tool.Ifc.get_schema() == "IFC2X3"
         references = cls.get_document_references(document)
+        
+        # Collect references first
+        reference_list = []
         for element in references:
-            new = props.documents.add()
-            new.ifc_definition_id = element.id()
             # Use Description + Location instead of Name as IFC has a restriction
-            # for IfcDocumentReference to have Name only if it has no ReferencedDocument.
             name = " - ".join([x for x in [element.Description, element.Location] if x])
-            new["name"] = name or "Unnamed"
-            new["identification"] = cls.get_external_reference_id(element)
+            name = name or "Unnamed"
+            reference_list.append({
+                "element": element,
+                "id": element.id(),
+                "name": name,
+                "identification": cls.get_external_reference_id(element) or ""
+            })
+        
+        # Sort by identification then by description/name
+        reference_list.sort(key=lambda d: (d["identification"].lower(), d["name"].lower()))
+        
+        # Add to properties in sorted order
+        for ref in reference_list:
+            new = props.documents.add()
+            new.ifc_definition_id = ref["id"]
+            new["name"] = ref["name"]
+            new["identification"] = ref["identification"]
             new.is_information = False
 
     @classmethod
     def import_subdocuments(cls, document: ifcopenshell.entity_instance) -> None:
         props = cls.get_document_props()
         if document.IsPointer:
+            # Collect subdocuments first
+            subdocuments = []
             for element in document.IsPointer[0].RelatedDocuments or []:
+                subdocuments.append({
+                    "element": element,
+                    "id": element.id(),
+                    "name": element.Name or "Unnamed",
+                    "identification": cls.get_document_information_id(element) or "*"
+                })
+            
+            # Sort by identification then by name
+            subdocuments.sort(key=lambda d: (d["identification"].lower(), d["name"].lower()))
+            
+            # Add to properties in sorted order
+            for doc in subdocuments:
                 new = props.documents.add()
-                new.ifc_definition_id = element.id()
-                new["name"] = element.Name or "Unnamed"
+                new.ifc_definition_id = doc["id"]
+                new["name"] = doc["name"]
                 new.is_information = True
-                new["identification"] = cls.get_document_information_id(element) or "*"
+                new["identification"] = doc["identification"]
 
     @classmethod
     def is_document_information(cls, document: ifcopenshell.entity_instance) -> bool:

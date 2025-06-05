@@ -27,6 +27,23 @@ import bonsai.core.document as core
 from bonsai.bim.module.document.data import DocumentData
 
 
+def update_document_objects(document_id=None):
+    DocumentData.is_loaded = False
+    DocumentData.load()
+    
+    # If no specific document_id is provided, try to get it from the active document
+    if document_id is None:
+        props = tool.Document.get_document_props()
+        if props.documents and props.active_document_index < len(props.documents):
+            document = props.documents[props.active_document_index]
+            if document.ifc_definition_id:
+                document_id = document.ifc_definition_id
+    
+    # Update objects for the document if an ID is available
+    if document_id:
+        DocumentData.load_document_objects_into_props(document_id)
+
+
 class LoadProjectDocuments(bpy.types.Operator):
     bl_idname = "bim.load_project_documents"
     bl_label = "Load Project Documents"
@@ -35,6 +52,7 @@ class LoadProjectDocuments(bpy.types.Operator):
     def execute(self, context):
         core.load_project_documents(tool.Document)
         bonsai.bim.handler.refresh_ui_data()  # Update breadcrumbs data.
+        update_document_objects()
         return {"FINISHED"}
 
 
@@ -47,14 +65,9 @@ class LoadDocument(bpy.types.Operator):
     def execute(self, context):
         core.load_document(tool.Document, document=tool.Ifc.get().by_id(self.document))
         bonsai.bim.handler.refresh_ui_data()  # Update breadcrumbs data.
-
-        props = tool.Document.get_document_props()
-        if props.documents and props.active_document_index < len(props.documents):
-            document = props.documents[props.active_document_index]
-            if document.ifc_definition_id:
-                DocumentData.load_document_objects_into_props(document.ifc_definition_id)
-                
+        update_document_objects()
         return {"FINISHED"}
+
 
 class LoadParentDocument(bpy.types.Operator):
     bl_idname = "bim.load_parent_document"
@@ -64,7 +77,9 @@ class LoadParentDocument(bpy.types.Operator):
     def execute(self, context):
         core.load_parent_document(tool.Document)
         bonsai.bim.handler.refresh_ui_data()  # Update breadcrumbs data.
+        update_document_objects()
         return {"FINISHED"}
+
 
 
 class DisableDocumentEditingUI(bpy.types.Operator):
@@ -135,7 +150,6 @@ class RemoveDocument(bpy.types.Operator, tool.Ifc.Operator):
     def _execute(self, context):
         core.remove_document(tool.Ifc, tool.Document, document=tool.Ifc.get().by_id(self.document))
 
-
 class AssignDocument(bpy.types.Operator, tool.Ifc.Operator):
     bl_idname = "bim.assign_document"
     bl_label = "Assign Document"
@@ -151,6 +165,8 @@ class AssignDocument(bpy.types.Operator, tool.Ifc.Operator):
             element = tool.Ifc.get_entity(obj)
             if element:
                 core.assign_document(tool.Ifc, product=element, document=document)
+        
+        update_document_objects(self.document)
 
 
 class UnassignDocument(bpy.types.Operator, tool.Ifc.Operator):
@@ -166,8 +182,10 @@ class UnassignDocument(bpy.types.Operator, tool.Ifc.Operator):
         for obj in objs:
             element = tool.Ifc.get_entity(obj)
             if element:
+                import bonsai.core.document as core
                 core.unassign_document(tool.Ifc, product=element, document=document)
-
+        
+        update_document_objects(self.document)
 
 class SelectDocumentObjects(bpy.types.Operator):
     bl_idname = "bim.select_document_objects"

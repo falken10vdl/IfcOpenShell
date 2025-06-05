@@ -33,7 +33,6 @@ classes = (
     operator.RemoveDocument,
     operator.SelectDocumentObjects,
     operator.UnassignDocument,
-    data.BIM_OT_update_document_objects,
     prop.Document,
     prop.DocumentObject,
     prop.BIMDocumentProperties,
