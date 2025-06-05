@@ -211,15 +211,17 @@ class BIM_UL_documents(UIList):
                 op = row.operator("bim.load_document", text="", emboss=False, icon="DISCLOSURE_TRI_RIGHT")
                 op.document = item.ifc_definition_id
                 row.label(text="", icon="FILE")
+                text = " - ".join([x for x in [item.name, item.location] if x])
             else:
                 row.label(text="", icon="BLANK1")
                 row.label(text="", icon="FILE_HIDDEN")
+                text = " - ".join([x for x in [item.description, item.location] if x])
 
-            # Identification and name
+            # Identification and name/description-location
             split1 = row.split(factor=0.1)
             split1.prop(item, "identification", text="", emboss=False)
             split2 = split1.split(factor=0.8)  # Adjust factor to make room for icons
-            split2.prop(item, "name", text="", emboss=False)
+            split2.label(text=text)
 
             if item.location:
                 if item.location.lower().endswith(".ifc"):
