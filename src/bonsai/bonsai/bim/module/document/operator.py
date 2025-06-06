@@ -31,7 +31,6 @@ def update_document_objects(document_id=None):
     DocumentData.is_loaded = False
     DocumentData.load()
     
-    # If no specific document_id is provided, try to get it from the active document
     if document_id is None:
         props = tool.Document.get_document_props()
         if props.documents and props.active_document_index < len(props.documents):
@@ -39,7 +38,6 @@ def update_document_objects(document_id=None):
             if document.ifc_definition_id:
                 document_id = document.ifc_definition_id
     
-    # Update objects for the document if an ID is available
     if document_id:
         DocumentData.load_document_objects_into_props(document_id)
 
@@ -63,23 +61,9 @@ class LoadDocument(bpy.types.Operator):
 
     def execute(self, context):
         core.load_document(tool.Document, document=tool.Ifc.get().by_id(self.document))
-        bonsai.bim.handler.refresh_ui_data()  # Update breadcrumbs data.
+        bonsai.bim.handler.refresh_ui_data()
         update_document_objects()
         return {"FINISHED"}
-
-
-class LoadParentDocument(bpy.types.Operator):
-    bl_idname = "bim.load_parent_document"
-    bl_label = "Load Project Documents"  # Changed from "Load Parent Document"
-    bl_options = {"REGISTER", "UNDO"}
-
-    def execute(self, context):
-        # Instead of loading parent document, load all project documents
-        bpy.ops.bim.load_project_documents()
-        update_document_objects()
-        return {"FINISHED"}
-
-
 
 class DisableDocumentEditingUI(bpy.types.Operator):
     bl_idname = "bim.disable_document_editing_ui"
@@ -129,30 +113,22 @@ class AddInformation(bpy.types.Operator, tool.Ifc.Operator):
     def _execute(self, context):
         props = tool.Document.get_document_props()
         
-        # Determine parent document based on selection
         parent = None
         if props.documents and props.active_document_index < len(props.documents):
             selected_document = props.documents[props.active_document_index]
             
-            # Check if the virtual root is selected
             if selected_document.ifc_definition_id == -1:
-                # If virtual root is selected, add to project directly
                 parent = tool.Ifc.get().by_type("IfcProject")[0] if tool.Ifc.get().by_type("IfcProject") else None
-            # Only use as parent if the selected document is an information element
             elif selected_document.is_information:
                 parent = tool.Ifc.get().by_id(selected_document.ifc_definition_id)
             else:
-                # Report that we can't add an information element as a child of a reference
                 self.report({"ERROR"}, "Cannot add an information element as a child of a reference element")
                 return {"CANCELLED"}
         else:
-            # If nothing is selected, use the project as parent
             parent = tool.Ifc.get().by_type("IfcProject")[0] if tool.Ifc.get().by_type("IfcProject") else None
         
-        # Add information using the core function, passing the selected parent
         information = core.add_information(tool.Ifc, tool.Document, parent)
         
-        # Update expanded documents list to ensure root and parent are expanded
         import json
         expanded_docs = []
         try:
@@ -160,20 +136,17 @@ class AddInformation(bpy.types.Operator, tool.Ifc.Operator):
         except (AttributeError, json.JSONDecodeError):
             pass
         
-        # Ensure the virtual root is expanded
         project = tool.Ifc.get().by_type("IfcProject")[0]
-        virtual_root_id = -project.id()  # Use negative project ID
+        virtual_root_id = -project.id()
         if virtual_root_id in expanded_docs:
-            expanded_docs.remove(virtual_root_id)  # Remove to ensure it's expanded by default
+            expanded_docs.remove(virtual_root_id)
                 
-        # Also ensure the parent document is expanded if it's an info document
         if parent and parent.is_a("IfcDocumentInformation"):
             if parent.id() not in expanded_docs:
                 expanded_docs.append(parent.id())
         
         context.scene.ExpandedDocuments.json_string = json.dumps(expanded_docs)
         
-        # Reload project documents to update UI
         bpy.ops.bim.load_project_documents()
         
         return {"FINISHED"}
@@ -186,25 +159,20 @@ class AddDocumentReference(bpy.types.Operator, tool.Ifc.Operator):
     def _execute(self, context):
         props = tool.Document.get_document_props()
         
-        # Ensure we have a selected document
         if not props.documents or props.active_document_index >= len(props.documents):
             self.report({"ERROR"}, "No document selected")
             return {"CANCELLED"}
             
         selected_document = props.documents[props.active_document_index]
         
-        # Only proceed if the selected document is an information element
         if not selected_document.is_information:
             self.report({"ERROR"}, "Cannot add a reference to a reference element")
             return {"CANCELLED"}
             
-        # Get the parent document
         parent = tool.Ifc.get().by_id(selected_document.ifc_definition_id)
         
-        # Add reference using the core function
         core.add_reference(tool.Ifc, tool.Document)
         
-        # Update expanded documents list to ensure parent is expanded
         import json
         expanded_docs = []
         try:
@@ -212,12 +180,10 @@ class AddDocumentReference(bpy.types.Operator, tool.Ifc.Operator):
         except (AttributeError, json.JSONDecodeError):
             pass
             
-        # Ensure the parent document is expanded
         if parent.id() not in expanded_docs:
             expanded_docs.append(parent.id())
             context.scene.ExpandedDocuments.json_string = json.dumps(expanded_docs)
         
-        # Reload project documents to update UI
         bpy.ops.bim.load_project_documents()
         
         return {"FINISHED"}
@@ -260,18 +226,15 @@ class UpdateAssignedDocuments(bpy.types.Operator):
     bl_options = {"REGISTER"}
     
     def execute(self, context):
-        # Make sure we're working with the latest data
         ObjectDocumentData.is_loaded = False
         ObjectDocumentData.load()
             
-        # Populate the properties collection
         props = tool.Document.get_document_props()
         props.assigned_documents.clear()
         
         if not ObjectDocumentData.data.get("documents"):
             return {"FINISHED"}
         
-        # Sort documents by identification then name
         sorted_docs = sorted(
             ObjectDocumentData.data["documents"], 
             key=lambda doc: ((doc.get("identification") or "").lower(), 
@@ -284,7 +247,6 @@ class UpdateAssignedDocuments(bpy.types.Operator):
             new.identification = document["identification"] or "*"
             new.is_information = document.get("is_information", False)
             new.ifc_definition_id = document["id"]
-            # Ensure location is properly set
             new.location = document.get("location") or ""
             new.description = document.get("description") or ""
             
@@ -299,10 +261,8 @@ class AssignDocument(bpy.types.Operator, tool.Ifc.Operator):
     document: bpy.props.IntProperty()
 
     def _execute(self, context):
-        # Get the document to assign
         document = tool.Ifc.get().by_id(self.document)
         
-        # Get the objects to assign it to
         objs = [bpy.data.objects[self.obj]] if self.obj else tool.Blender.get_selected_objects()
         
         for obj in objs:
@@ -310,10 +270,8 @@ class AssignDocument(bpy.types.Operator, tool.Ifc.Operator):
             if element:
                 core.assign_document(tool.Ifc, product=element, document=document)
         
-        # Update document objects for the assigned document
         update_document_objects(self.document)
         
-        # Refresh object document data
         ObjectDocumentData.is_loaded = False
         ObjectDocumentData.load()
         bpy.ops.bim.update_assigned_documents()
@@ -327,10 +285,8 @@ class UnassignDocument(bpy.types.Operator, tool.Ifc.Operator):
     document: bpy.props.IntProperty()
 
     def _execute(self, context):
-        # Get the document to unassign
         document = tool.Ifc.get().by_id(self.document)
         
-        # Get the objects to unassign it from
         objs = [bpy.data.objects.get(self.obj)] if self.obj else tool.Blender.get_selected_objects()
         for obj in objs:
             element = tool.Ifc.get_entity(obj)
@@ -338,27 +294,21 @@ class UnassignDocument(bpy.types.Operator, tool.Ifc.Operator):
                 import bonsai.core.document as core
                 core.unassign_document(tool.Ifc, product=element, document=document)
         
-        # Get the currently active document in BIM_UL_documents
         props = tool.Document.get_document_props()
         active_document_id = None
         if props.documents and props.active_document_index < len(props.documents):
             active_document = props.documents[props.active_document_index]
             active_document_id = active_document.ifc_definition_id
             
-        # Update the document objects list with objects from the ACTIVE document,
-        # not the one being unassigned (if they're different)
+
         if active_document_id and active_document_id != self.document:
             update_document_objects(active_document_id)
         else:
-            # If there's no active document or it's the same as the one being unassigned,
-            # then update the objects for the unassigned document
             update_document_objects(self.document)
         
-        # Reload the ObjectDocumentData to reflect the removed assignment
         ObjectDocumentData.is_loaded = False
         ObjectDocumentData.load()
         
-        # Update the assigned documents list in the UI
         bpy.ops.bim.update_assigned_documents()
 
 class SelectDocumentObjects(bpy.types.Operator):
@@ -390,41 +340,32 @@ class LoadObjectDocuments(bpy.types.Operator):
     bl_options = {"REGISTER", "UNDO"}
 
     def execute(self, context):
-        # First make sure ObjectDocumentData is loaded
         if not ObjectDocumentData.is_loaded:
             ObjectDocumentData.load()
             
-        # Load project documents for selection
         core.load_project_documents(tool.Document)
         
-        # Set editing mode
         props = tool.Document.get_document_props()
         props.is_object_editing = True
         
-        # Update UI breadcrumbs
         bonsai.bim.handler.refresh_ui_data()
         
-        # Update the assigned documents list
         self.update_assigned_documents(props)
         
         return {"FINISHED"}
     
     def update_assigned_documents(self, props):
-        # Clear existing assigned documents
         props.assigned_documents.clear()
         
-        # Get document data
         if not ObjectDocumentData.data.get("documents"):
             return
             
-        # Sort documents by identification then name
         sorted_docs = sorted(
             ObjectDocumentData.data["documents"], 
             key=lambda doc: ((doc.get("identification") or "").lower(), 
                            (doc.get("name") or "").lower())
         )
         
-        # Add documents to the collection
         for document in sorted_docs:
             new = props.assigned_documents.add()
             new.name = document["name"] or "Unnamed"
@@ -498,10 +439,9 @@ class ToggleDocument(bpy.types.Operator, tool.Ifc.Operator):
             expanded_documents.append(document_id)
         elif self.option == "Collapse" and document_id in expanded_documents:
             expanded_documents.remove(document_id)
-        elif document_id == -1:  # Special case for the root element
-            # Get project ID to use as the virtual root ID
+        elif document_id == -1:
             project = tool.Ifc.get().by_type("IfcProject")[0]
-            virtual_root_id = -project.id()  # Use negative project ID
+            virtual_root_id = -project.id()
             
             if self.option == "Expand" and virtual_root_id not in expanded_documents:
                 expanded_documents.append(virtual_root_id)
@@ -510,6 +450,5 @@ class ToggleDocument(bpy.types.Operator, tool.Ifc.Operator):
             
         context.scene.ExpandedDocuments.json_string = json.dumps(expanded_documents)
         
-        # Reload documents with updated expand/collapse state
         bpy.ops.bim.load_project_documents()
         return {"FINISHED"}

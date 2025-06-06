@@ -36,13 +36,6 @@ def load_document(document_tool: tool.Document, document: ifcopenshell.entity_in
     document_tool.import_references(document)
     document_tool.disable_editing_document()
 
-def load_parent_document(document: tool.Document) -> None:
-    # This function is no longer needed with tree view
-    # Just reload the project documents
-    document.clear_document_tree()
-    document.import_project_documents()
-
-
 def disable_document_editing_ui(document: tool.Document) -> None:
     document.disable_editing_ui()
     document.disable_editing_document()

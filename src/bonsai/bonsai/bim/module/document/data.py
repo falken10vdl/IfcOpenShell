@@ -38,7 +38,6 @@ class DocumentData:
             "total_information": cls.total_information(),
             "total_documents": cls.total_documents(),
             "total_documented_objects": cls.total_documented_objects(),
-            "parent_document": cls.parent_document(),
             "document_objects": cls.document_objects(),
         }
         cls.is_loaded = True
@@ -67,28 +66,18 @@ class DocumentData:
         """Returns the total number of objects that have document associations"""
         file = tool.Ifc.get()
         
-        # Get all IfcRelAssociatesDocument relationships
         document_rels = file.by_type("IfcRelAssociatesDocument")
         
-        # Create a set to track unique objects (to avoid counting duplicates if an object 
-        # is associated with multiple documents)
+
         documented_objects = set()
         
-        # Count objects with document associations
         for rel in document_rels:
             for related_object in rel.RelatedObjects:
-                # Only count objects that are represented in the Blender scene
                 obj = tool.Ifc.get_object(related_object)
                 if obj:
                     documented_objects.add(related_object.id())
         
         return len(documented_objects)
-
-    @classmethod
-    def parent_document(cls):
-        # This method is no longer needed with tree view
-        # You can either remove it or return an empty string
-        return ""
 
     @classmethod
     def document_objects(cls):
@@ -122,7 +111,6 @@ class DocumentData:
         if "document_objects" not in cls.data or document_id not in cls.data["document_objects"]:
             return
             
-        # Sort the objects by name before adding them to the collection
         sorted_objects = sorted(cls.data["document_objects"][document_id], key=lambda x: x["name"].lower())
         
         for obj_data in sorted_objects:
@@ -150,31 +138,26 @@ class ObjectDocumentData:
             
         for rel in getattr(element, "HasAssociations", []):
             if rel.is_a("IfcRelAssociatesDocument"):
-                # Check document type
                 is_information = rel.RelatingDocument.is_a("IfcDocumentInformation")
                 is_reference = rel.RelatingDocument.is_a("IfcDocumentReference")
                 
                 if not (is_information or is_reference):
                     continue
                     
-                # We'll handle both document types
                 name = rel.RelatingDocument.Name
                 location = None
                 identification = None
                 description = None
                 
                 if is_information:
-                    # Handle IfcDocumentInformation
                     if tool.Ifc.get_schema() == "IFC2X3":
                         identification = rel.RelatingDocument.DocumentId
                     else:
                         identification = rel.RelatingDocument.Identification
                         
-                    # Information elements typically don't have location directly
                     location = getattr(rel.RelatingDocument, "Location", None)
                     
-                else:  # is_reference
-                    # Handle IfcDocumentReference
+                else:
                     description = rel.RelatingDocument.Description
                     if tool.Ifc.get_schema() == "IFC2X3":
                         if not name and rel.RelatingDocument.ReferenceToDocument:
@@ -197,7 +180,6 @@ class ObjectDocumentData:
                         if location is None and rel.RelatingDocument.ReferencedDocument:
                             location = rel.RelatingDocument.ReferencedDocument.Location
 
-                # Process location to file:// URL if needed
                 if location:
                     if not "://" in location:
                         if not os.path.isabs(location):

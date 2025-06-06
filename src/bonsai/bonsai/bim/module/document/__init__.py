@@ -30,7 +30,6 @@ classes = (
     operator.EnableEditingDocument,
     operator.LoadDocument,
     operator.LoadObjectDocuments,
-    operator.LoadParentDocument,
     operator.LoadProjectDocuments,
     operator.RemoveDocument,
     operator.SelectDocumentObjects,
