@@ -59,14 +59,17 @@ class Document(bonsai.core.tool.Document):
         props = cls.get_document_props()
         return bonsai.bim.helper.export_attributes(props.document_attributes)
 
-
-
     @classmethod
     def import_document_attributes(cls, document: ifcopenshell.entity_instance) -> None:
         props = cls.get_document_props()
         props.document_attributes.clear()
 
-        def callback(attr_name: str, _, data: dict[str, Any]) -> Union[bool, None]:
+        def callback(attr_name: str, attr_value: Any, data: dict[str, Any]) -> Union[bool, None]:
+            if attr_name == "Location" and attr_value is None:
+                # Always ensure Location has a default empty string value
+                data[attr_name] = ""
+                return True
+                
             if attr_name != "Name":
                 return None  # Proceed normally
 
@@ -207,13 +210,13 @@ class Document(bonsai.core.tool.Document):
                         doc_info = document.ReferenceToDocument[0]
                         if not new.name:
                             new.name = doc_info.Name or ""
-                        new.location = new.location or doc_info.Location or ""
+                        new.location = new.location or ""
                 else:
                     if hasattr(document, "ReferencedDocument") and document.ReferencedDocument:
                         doc_info = document.ReferencedDocument
                         if not new.name:
                             new.name = doc_info.Name or ""
-                        new.location = new.location or doc_info.Location or ""
+                        new.location = new.location or ""
         
         # Check if this document has children
         doc_id = document.id()
@@ -270,33 +273,6 @@ class Document(bonsai.core.tool.Document):
             new["description"] = ref["description"]
             new.location = ref["location"]
             new.is_information = False
-
-    @classmethod
-    def import_subdocuments(cls, document: ifcopenshell.entity_instance) -> None:
-        props = cls.get_document_props()
-        if document.IsPointer:
-            # Collect subdocuments first
-            subdocuments = []
-            for element in document.IsPointer[0].RelatedDocuments or []:
-                subdocuments.append({
-                    "element": element,
-                    "id": element.id(),
-                    "name": element.Name or "Unnamed",
-                    "identification": cls.get_document_information_id(element) or "*",
-                    "location": element.Location or ""
-                })
-            
-            # Sort by identification then by name
-            subdocuments.sort(key=lambda d: (d["identification"].lower(), d["name"].lower()))
-            
-            # Add to properties in sorted order
-            for doc in subdocuments:
-                new = props.documents.add()
-                new.ifc_definition_id = doc["id"]
-                new["name"] = doc["name"]
-                new.is_information = True
-                new["identification"] = doc["identification"]
-                new.location = doc.get("location", "")  # Add this line
 
     @classmethod
     def is_document_information(cls, document: ifcopenshell.entity_instance) -> bool:

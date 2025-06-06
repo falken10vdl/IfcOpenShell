@@ -32,22 +32,39 @@ def load_project_documents(document: tool.Document) -> None:
 
 def load_document(document_tool: tool.Document, document: ifcopenshell.entity_instance) -> None:
     document_tool.clear_document_tree()
-    document_tool.import_subdocuments(document)
-    document_tool.import_references(document)
+    
+    # Instead of using separate import methods, update the expanded documents list
+    # to ensure this document is expanded, then reload project documents
+    import bpy, json
+    try:
+        expanded_docs = json.loads(bpy.context.scene.ExpandedDocuments.json_string)
+    except (AttributeError, json.JSONDecodeError):
+        expanded_docs = []
+        
+    # Ensure the document is expanded
+    if document.id() not in expanded_docs:
+        expanded_docs.append(document.id())
+        bpy.context.scene.ExpandedDocuments.json_string = json.dumps(expanded_docs)
+    
+    # Reload all documents with proper tree structure
+    document_tool.import_project_documents()
     document_tool.disable_editing_document()
 
 def disable_document_editing_ui(document: tool.Document) -> None:
     document.disable_editing_ui()
     document.disable_editing_document()
 
-
 def enable_editing_document(document_tool: tool.Document, document: ifcopenshell.entity_instance) -> None:
+    props = document_tool.get_document_props()
+    props.active_document_id = document.id()
+    props.is_document_editing = True
     document_tool.import_document_attributes(document)
-    document_tool.set_active_document(document)
-
 
 def disable_editing_document(document: tool.Document) -> None:
-    document.disable_editing_document()
+    props = document.get_document_props()
+    props.active_document_id = 0
+    props.is_document_editing = False
+    props.document_attributes.clear()
 
 
 def add_information(ifc: tool.Ifc, document_tool: tool.Document, parent=None) -> ifcopenshell.entity_instance:
@@ -102,6 +119,9 @@ def add_reference(ifc: tool.Ifc, document: tool.Document) -> None:
         # Create the reference
         reference = ifc.run("document.add_reference", information=parent)
         
+        # Explicitly ensure Location is initialized to empty string
+        reference.Location = ""
+        
         # Update expanded documents list to ensure parent is expanded to show the new reference
         import bpy, json
         try:
@@ -113,8 +133,7 @@ def add_reference(ifc: tool.Ifc, document: tool.Document) -> None:
         if parent.id() not in expanded_docs:
             expanded_docs.append(parent.id())
             bpy.context.scene.ExpandedDocuments.json_string = json.dumps(expanded_docs)
-        
-    # Reload documents to update UI
+
     document.import_project_documents()
 
 def edit_document(ifc: tool.Ifc, document_tool: tool.Document, document: ifcopenshell.entity_instance) -> None:
@@ -125,13 +144,7 @@ def edit_document(ifc: tool.Ifc, document_tool: tool.Document, document: ifcopen
         ifc.run("document.edit_reference", reference=document, attributes=attributes)
     document_tool.disable_editing_document()
     document_tool.clear_document_tree()
-    parent = document_tool.get_active_breadcrumb()
-    if parent:
-        document_tool.import_subdocuments(parent)
-        document_tool.import_references(parent)
-    else:
-        document_tool.import_project_documents()
-
+    document_tool.import_project_documents()
 
 def remove_document(ifc: tool.Ifc, document_tool: tool.Document, document: ifcopenshell.entity_instance) -> None:
     document_tool.clear_document_tree()
@@ -139,12 +152,7 @@ def remove_document(ifc: tool.Ifc, document_tool: tool.Document, document: ifcop
         ifc.run("document.remove_information", information=document)
     else:
         ifc.run("document.remove_reference", reference=document)
-    parent = document_tool.get_active_breadcrumb()
-    if parent:
-        document_tool.import_subdocuments(parent)
-        document_tool.import_references(parent)
-    else:
-        document_tool.import_project_documents()
+    document_tool.import_project_documents()
 
 
 def assign_document(

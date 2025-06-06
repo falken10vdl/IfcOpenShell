@@ -114,6 +114,7 @@ class BIMDocumentProperties(PropertyGroup):
     documents: CollectionProperty(name="Documents", type=Document)
     active_document_index: IntProperty(name="Active Document Index", update=update_active_document)
     is_editing: BoolProperty(name="Is Editing", default=False)
+    is_document_editing: BoolProperty(name="Is Document Editing", default=False)
     is_object_editing: BoolProperty(name="Is Object Editing", default=False)
     document_objects: CollectionProperty(name="Document Objects", type=DocumentObject)
     active_document_object_index: IntProperty(name="Active Document Object Index")
@@ -127,6 +128,7 @@ class BIMDocumentProperties(PropertyGroup):
         documents: bpy.types.bpy_prop_collection_idprop[Document]
         active_document_index: int
         is_editing: bool
+        is_document_editing: bool
         is_object_editing: bool
         document_objects: bpy.types.bpy_prop_collection_idprop[DocumentObject]
         active_document_object_index: int

@@ -91,6 +91,8 @@ class EnableEditingDocument(bpy.types.Operator):
     document: bpy.props.IntProperty()
 
     def execute(self, context):
+        props = tool.Document.get_document_props()
+        props.is_document_editing = True
         core.enable_editing_document(tool.Document, document=tool.Ifc.get().by_id(self.document))
         return {"FINISHED"}
 
@@ -101,6 +103,8 @@ class DisableEditingDocument(bpy.types.Operator):
     bl_options = {"REGISTER", "UNDO"}
 
     def execute(self, context):
+        props = tool.Document.get_document_props()
+        props.is_document_editing = False
         core.disable_editing_document(tool.Document)
         return {"FINISHED"}
 
@@ -171,8 +175,8 @@ class AddDocumentReference(bpy.types.Operator, tool.Ifc.Operator):
             
         parent = tool.Ifc.get().by_id(selected_document.ifc_definition_id)
         
+        props.document_attributes.clear()
         core.add_reference(tool.Ifc, tool.Document)
-        
         import json
         expanded_docs = []
         try:
@@ -189,7 +193,6 @@ class AddDocumentReference(bpy.types.Operator, tool.Ifc.Operator):
         return {"FINISHED"}
 
 
-
 class EditDocument(bpy.types.Operator, tool.Ifc.Operator):
     bl_idname = "bim.edit_document"
     bl_label = "Edit Information"
@@ -200,6 +203,7 @@ class EditDocument(bpy.types.Operator, tool.Ifc.Operator):
         if props.active_document_id:
             core.edit_document(tool.Ifc, tool.Document, document=tool.Ifc.get().by_id(props.active_document_id))
             props.active_document_id = 0
+            props.is_document_editing = False
             DocumentData.is_loaded = False
             DocumentData.load()
             ObjectDocumentData.is_loaded = False  

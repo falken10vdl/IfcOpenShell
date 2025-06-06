@@ -62,10 +62,14 @@ def add_reference(file: ifcopenshell.file, information: ifcopenshell.entity_inst
             reference=reference2, attributes={"Identification": "2.1.15"})
     """
     if file.schema == "IFC2X3":
-        reference = file.create_entity("IfcDocumentReference", ItemReference="X")
+        reference = file.create_entity("IfcDocumentReference", ItemReference="X", Location="")
         if information:
             references = list(information.DocumentReferences or [])
             references.append(reference)
             information.DocumentReferences = references
         return reference
-    return file.create_entity("IfcDocumentReference", ReferencedDocument=information, Identification="X")
+    
+    return file.create_entity("IfcDocumentReference", 
+                             ReferencedDocument=information, 
+                             Identification="X",
+                             Location="")

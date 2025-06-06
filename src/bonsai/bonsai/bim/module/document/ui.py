@@ -54,50 +54,39 @@ class BIM_PT_documents(Panel):
             return
 
         row = self.layout.row(align=True)
-
         row.alignment = "RIGHT"
-        row.operator("bim.add_information", text="", icon="ADD")
 
-        if self.props.documents and self.props.active_document_index < len(self.props.documents):
-            active_doc = self.props.documents[self.props.active_document_index]
-            if active_doc.is_information:
-                row.operator("bim.add_document_reference", text="", icon="FILE_HIDDEN")
-
-        active_document = self.props.active_document
-
-        if self.props.active_document_id:
+        if self.props.is_document_editing:
+            # When actively editing a document, only show edit/cancel buttons
             row.operator("bim.edit_document", text="", icon="CHECKMARK")
             row.operator("bim.disable_editing_document", text="", icon="CANCEL")
-        elif active_document:
-            ifc_definition_id = active_document.ifc_definition_id
-            row.operator("bim.select_document_objects", text="", icon="RESTRICT_SELECT_OFF").document = (
-                ifc_definition_id
-            )
-            row.operator("bim.assign_document", text="", icon="BRUSH_DATA").document = ifc_definition_id
-            row.operator("bim.enable_editing_document", text="", icon="GREASEPENCIL").document = ifc_definition_id
-            row.operator("bim.remove_document", text="", icon="X").document = ifc_definition_id
+        else:
+            # When not actively editing, show add buttons and other operations
+            row.operator("bim.add_information", text="", icon="ADD")
+
+            if self.props.documents and self.props.active_document_index < len(self.props.documents):
+                active_doc = self.props.documents[self.props.active_document_index]
+                if active_doc.is_information:
+                    row.operator("bim.add_document_reference", text="", icon="FILE_HIDDEN")
+
+            active_document = self.props.active_document
+            if active_document:
+                ifc_definition_id = active_document.ifc_definition_id
+                row.operator("bim.select_document_objects", text="", icon="RESTRICT_SELECT_OFF").document = (
+                    ifc_definition_id
+                )
+                row.operator("bim.assign_document", text="", icon="BRUSH_DATA").document = ifc_definition_id
+                row.operator("bim.enable_editing_document", text="", icon="GREASEPENCIL").document = ifc_definition_id
+                row.operator("bim.remove_document", text="", icon="X").document = ifc_definition_id
 
         self.layout.template_list("BIM_UL_documents", "", self.props, "documents", self.props, "active_document_index")
 
-        if self.props.active_document_id:
+        if self.props.is_document_editing:
+            active_document = self.props.active_document
             if active_document.is_information:
                 draw_attributes(self.props.document_attributes, self.layout)
             else:
                 draw_attributes(self.props.document_attributes, self.layout, filter_attributes=["Name"])
-        
-        if self.props.is_editing and self.props.documents and self.props.active_document_index < len(self.props.documents):
-            document = self.props.documents[self.props.active_document_index]
-            box = self.layout.box()
-            row = box.row(align=True)
-            row.label(text="Assigned Objects", icon="OUTLINER_OB_EMPTY")
-            box.template_list(
-                "BIM_UL_document_objects", 
-                "", 
-                self.props, 
-                "document_objects", 
-                self.props, 
-                "active_document_object_index"
-            )
 
 class BIM_PT_object_documents(Panel):
     bl_label = "Documents"
