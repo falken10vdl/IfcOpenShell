@@ -51,7 +51,6 @@ class LoadProjectDocuments(bpy.types.Operator):
 
     def execute(self, context):
         core.load_project_documents(tool.Document)
-        bonsai.bim.handler.refresh_ui_data()  # Update breadcrumbs data.
         update_document_objects()
         return {"FINISHED"}
 
@@ -71,12 +70,12 @@ class LoadDocument(bpy.types.Operator):
 
 class LoadParentDocument(bpy.types.Operator):
     bl_idname = "bim.load_parent_document"
-    bl_label = "Load Parent Document"
+    bl_label = "Load Project Documents"  # Changed from "Load Parent Document"
     bl_options = {"REGISTER", "UNDO"}
 
     def execute(self, context):
-        core.load_parent_document(tool.Document)
-        bonsai.bim.handler.refresh_ui_data()  # Update breadcrumbs data.
+        # Instead of loading parent document, load all project documents
+        bpy.ops.bim.load_project_documents()
         update_document_objects()
         return {"FINISHED"}
 
@@ -135,30 +134,44 @@ class AddInformation(bpy.types.Operator, tool.Ifc.Operator):
         if props.documents and props.active_document_index < len(props.documents):
             selected_document = props.documents[props.active_document_index]
             
+            # Check if the virtual root is selected
+            if selected_document.ifc_definition_id == -1:
+                # If virtual root is selected, add to project directly
+                parent = tool.Ifc.get().by_type("IfcProject")[0] if tool.Ifc.get().by_type("IfcProject") else None
             # Only use as parent if the selected document is an information element
-            if selected_document.is_information:
+            elif selected_document.is_information:
                 parent = tool.Ifc.get().by_id(selected_document.ifc_definition_id)
             else:
                 # Report that we can't add an information element as a child of a reference
                 self.report({"ERROR"}, "Cannot add an information element as a child of a reference element")
                 return {"CANCELLED"}
+        else:
+            # If nothing is selected, use the project as parent
+            parent = tool.Ifc.get().by_type("IfcProject")[0] if tool.Ifc.get().by_type("IfcProject") else None
         
         # Add information using the core function, passing the selected parent
         information = core.add_information(tool.Ifc, tool.Document, parent)
         
-        # Update expanded documents list to ensure new parent is expanded and child is visible
-        if parent and parent.is_a("IfcDocumentInformation"):
-            import json
-            expanded_docs = []
-            try:
-                expanded_docs = json.loads(context.scene.ExpandedDocuments.json_string)
-            except (AttributeError, json.JSONDecodeError):
-                pass
+        # Update expanded documents list to ensure root and parent are expanded
+        import json
+        expanded_docs = []
+        try:
+            expanded_docs = json.loads(context.scene.ExpandedDocuments.json_string)
+        except (AttributeError, json.JSONDecodeError):
+            pass
+        
+        # Ensure the virtual root is expanded
+        project = tool.Ifc.get().by_type("IfcProject")[0]
+        virtual_root_id = -project.id()  # Use negative project ID
+        if virtual_root_id in expanded_docs:
+            expanded_docs.remove(virtual_root_id)  # Remove to ensure it's expanded by default
                 
-            # Ensure the parent is expanded
+        # Also ensure the parent document is expanded if it's an info document
+        if parent and parent.is_a("IfcDocumentInformation"):
             if parent.id() not in expanded_docs:
                 expanded_docs.append(parent.id())
-                context.scene.ExpandedDocuments.json_string = json.dumps(expanded_docs)
+        
+        context.scene.ExpandedDocuments.json_string = json.dumps(expanded_docs)
         
         # Reload project documents to update UI
         bpy.ops.bim.load_project_documents()
@@ -171,7 +184,44 @@ class AddDocumentReference(bpy.types.Operator, tool.Ifc.Operator):
     bl_options = {"REGISTER", "UNDO"}
 
     def _execute(self, context):
+        props = tool.Document.get_document_props()
+        
+        # Ensure we have a selected document
+        if not props.documents or props.active_document_index >= len(props.documents):
+            self.report({"ERROR"}, "No document selected")
+            return {"CANCELLED"}
+            
+        selected_document = props.documents[props.active_document_index]
+        
+        # Only proceed if the selected document is an information element
+        if not selected_document.is_information:
+            self.report({"ERROR"}, "Cannot add a reference to a reference element")
+            return {"CANCELLED"}
+            
+        # Get the parent document
+        parent = tool.Ifc.get().by_id(selected_document.ifc_definition_id)
+        
+        # Add reference using the core function
         core.add_reference(tool.Ifc, tool.Document)
+        
+        # Update expanded documents list to ensure parent is expanded
+        import json
+        expanded_docs = []
+        try:
+            expanded_docs = json.loads(context.scene.ExpandedDocuments.json_string)
+        except (AttributeError, json.JSONDecodeError):
+            pass
+            
+        # Ensure the parent document is expanded
+        if parent.id() not in expanded_docs:
+            expanded_docs.append(parent.id())
+            context.scene.ExpandedDocuments.json_string = json.dumps(expanded_docs)
+        
+        # Reload project documents to update UI
+        bpy.ops.bim.load_project_documents()
+        
+        return {"FINISHED"}
+
 
 
 class EditDocument(bpy.types.Operator, tool.Ifc.Operator):
@@ -448,6 +498,15 @@ class ToggleDocument(bpy.types.Operator, tool.Ifc.Operator):
             expanded_documents.append(document_id)
         elif self.option == "Collapse" and document_id in expanded_documents:
             expanded_documents.remove(document_id)
+        elif document_id == -1:  # Special case for the root element
+            # Get project ID to use as the virtual root ID
+            project = tool.Ifc.get().by_type("IfcProject")[0]
+            virtual_root_id = -project.id()  # Use negative project ID
+            
+            if self.option == "Expand" and virtual_root_id not in expanded_documents:
+                expanded_documents.append(virtual_root_id)
+            elif self.option == "Collapse" and virtual_root_id in expanded_documents:
+                expanded_documents.remove(virtual_root_id)
             
         context.scene.ExpandedDocuments.json_string = json.dumps(expanded_documents)
         

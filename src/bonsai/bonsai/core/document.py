@@ -28,28 +28,19 @@ if TYPE_CHECKING:
 def load_project_documents(document: tool.Document) -> None:
     document.clear_document_tree()
     document.import_project_documents()
-    document.clear_breadcrumbs()
     document.enable_editing_ui()
-
 
 def load_document(document_tool: tool.Document, document: ifcopenshell.entity_instance) -> None:
     document_tool.clear_document_tree()
     document_tool.import_subdocuments(document)
     document_tool.import_references(document)
     document_tool.disable_editing_document()
-    document_tool.add_breadcrumb(document)
-
 
 def load_parent_document(document: tool.Document) -> None:
+    # This function is no longer needed with tree view
+    # Just reload the project documents
     document.clear_document_tree()
-    document.remove_latest_breadcrumb()
-    parent = document.get_active_breadcrumb()
-    if parent:
-        document.import_subdocuments(parent)
-        document.import_references(parent)
-        document.disable_editing_document()
-    else:
-        document.import_project_documents()
+    document.import_project_documents()
 
 
 def disable_document_editing_ui(document: tool.Document) -> None:
@@ -79,11 +70,7 @@ def add_information(ifc: tool.Ifc, document_tool: tool.Document, parent=None) ->
     """
     document_tool.clear_document_tree()
     
-    # If no parent is provided, try to get it from breadcrumbs (for backward compatibility)
-    if parent is None:
-        parent = document_tool.get_active_breadcrumb()
-    
-    # If still no parent, use the project
+    # If parent is None, use the project
     if parent is None and ifc.get().by_type("IfcProject"):
         parent = ifc.get().by_type("IfcProject")[0]
     
@@ -91,23 +78,51 @@ def add_information(ifc: tool.Ifc, document_tool: tool.Document, parent=None) ->
     information = ifc.run("document.add_information", parent=parent)
     ifc.run("document.add_reference", information=information)
     
-    # Update the UI display based on context
+    # Update the expanded documents list to ensure the parent is expanded
+    import bpy, json
     if parent and parent.is_a("IfcDocumentInformation"):
-        document_tool.import_subdocuments(parent)
-        document_tool.import_references(parent)
-    else:
-        document_tool.import_project_documents()
+        try:
+            expanded_docs = json.loads(bpy.context.scene.ExpandedDocuments.json_string)
+        except (AttributeError, json.JSONDecodeError):
+            expanded_docs = []
+            
+        # Ensure the parent is expanded
+        if parent.id() not in expanded_docs:
+            expanded_docs.append(parent.id())
+            bpy.context.scene.ExpandedDocuments.json_string = json.dumps(expanded_docs)
+    
+    # Reload project documents to update UI
+    document_tool.import_project_documents()
         
     return information
 
 def add_reference(ifc: tool.Ifc, document: tool.Document) -> None:
-    parent = document.get_active_breadcrumb()
-    assert parent
-    ifc.run("document.add_reference", information=parent)
-    document.clear_document_tree()
-    document.import_subdocuments(parent)
-    document.import_references(parent)
-
+    props = document.get_document_props()
+    parent = None
+    
+    if props.documents and props.active_document_index < len(props.documents):
+        selected_document = props.documents[props.active_document_index]
+        if selected_document.is_information:
+            parent = ifc.get().by_id(selected_document.ifc_definition_id)
+    
+    if parent:
+        # Create the reference
+        reference = ifc.run("document.add_reference", information=parent)
+        
+        # Update expanded documents list to ensure parent is expanded to show the new reference
+        import bpy, json
+        try:
+            expanded_docs = json.loads(bpy.context.scene.ExpandedDocuments.json_string)
+        except (AttributeError, json.JSONDecodeError):
+            expanded_docs = []
+            
+        # Ensure the parent is expanded
+        if parent.id() not in expanded_docs:
+            expanded_docs.append(parent.id())
+            bpy.context.scene.ExpandedDocuments.json_string = json.dumps(expanded_docs)
+        
+    # Reload documents to update UI
+    document.import_project_documents()
 
 def edit_document(ifc: tool.Ifc, document_tool: tool.Document, document: ifcopenshell.entity_instance) -> None:
     attributes = document_tool.export_document_attributes()

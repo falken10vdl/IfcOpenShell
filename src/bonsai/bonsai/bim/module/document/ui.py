@@ -54,14 +54,14 @@ class BIM_PT_documents(Panel):
             return
 
         row = self.layout.row(align=True)
-        if self.props.breadcrumbs:
-            row.operator("bim.load_parent_document", text="", icon="FRAME_PREV")
-            row.label(text=DocumentData.data["parent_document"])
-        else:
-            row.alignment = "RIGHT"
+
+        row.alignment = "RIGHT"  # Always right-aligned now
         row.operator("bim.add_information", text="", icon="ADD")
-        if self.props.breadcrumbs:
-            row.operator("bim.add_document_reference", text="", icon="FILE_HIDDEN")
+
+        if self.props.documents and self.props.active_document_index < len(self.props.documents):
+            active_doc = self.props.documents[self.props.active_document_index]
+            if active_doc.is_information:
+                row.operator("bim.add_document_reference", text="", icon="FILE_HIDDEN")
 
         active_document = self.props.active_document
 
@@ -213,6 +213,27 @@ class BIM_UL_documents(UIList):
             for i in range(0, item.tree_depth):
                 row.label(text="", icon="BLANK1")
                 
+            # Special handling for the virtual root element
+            if item.ifc_definition_id == -1:
+                # This is our virtual root element
+                op = row.operator(
+                    "bim.toggle_document", 
+                    icon="TRIA_DOWN" if item.is_expanded else "TRIA_RIGHT", 
+                    text="", 
+                    emboss=False
+                )
+                op.document = -1  # Special ID for the root
+                op.option = "Collapse" if item.is_expanded else "Expand"
+                
+                # Show the project icon for the root
+                row.label(text="", icon="OUTLINER_COLLECTION")
+                
+                # The rest of the UI is just the name
+                row.label(text=item.name)
+                return
+                
+            # Regular document items below this point
+            
             # Show expand/collapse toggle for information documents with children
             if item.is_information and item.has_children:
                 op = row.operator(

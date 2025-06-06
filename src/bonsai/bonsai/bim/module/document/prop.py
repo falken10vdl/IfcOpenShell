@@ -112,7 +112,6 @@ class BIMDocumentProperties(PropertyGroup):
     document_attributes: CollectionProperty(name="Document Attributes", type=Attribute)
     active_document_id: IntProperty(name="Active Document Id")
     documents: CollectionProperty(name="Documents", type=Document)
-    breadcrumbs: CollectionProperty(name="Breadcrumbs", type=StrProperty)
     active_document_index: IntProperty(name="Active Document Index", update=update_active_document)
     is_editing: BoolProperty(name="Is Editing", default=False)
     is_object_editing: BoolProperty(name="Is Object Editing", default=False)
@@ -126,7 +125,6 @@ class BIMDocumentProperties(PropertyGroup):
         document_attributes: bpy.types.bpy_prop_collection_idprop[Attribute]
         active_document_id: int
         documents: bpy.types.bpy_prop_collection_idprop[Document]
-        breadcrumbs: bpy.types.bpy_prop_collection_idprop[StrProperty]
         active_document_index: int
         is_editing: bool
         is_object_editing: bool

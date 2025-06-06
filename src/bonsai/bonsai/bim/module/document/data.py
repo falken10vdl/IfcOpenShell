@@ -86,12 +86,8 @@ class DocumentData:
 
     @classmethod
     def parent_document(cls):
-        props = tool.Document.get_document_props()
-        if len(props.breadcrumbs):
-            parent = tool.Ifc.get().by_id(int(props.breadcrumbs[-1].name))
-            if tool.Ifc.get_schema() == "IFC2X3":
-                return str(parent.DocumentId)
-            return str(parent.Identification)
+        # This method is no longer needed with tree view
+        # You can either remove it or return an empty string
         return ""
 
     @classmethod
