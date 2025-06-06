@@ -30,6 +30,7 @@ from bpy.props import (
     FloatVectorProperty,
     CollectionProperty,
 )
+from bonsai.bim.module.document.data import DocumentData
 from typing import TYPE_CHECKING, Union
 
 
@@ -104,7 +105,6 @@ def update_active_document(self, context):
     if self.documents and self.active_document_index < len(self.documents):
         document = self.documents[self.active_document_index]
         if document.ifc_definition_id:
-            from bonsai.bim.module.document.data import DocumentData
             DocumentData.load_document_objects_into_props(document.ifc_definition_id)
 
 

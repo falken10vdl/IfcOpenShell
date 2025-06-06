@@ -24,6 +24,8 @@ import ifcopenshell.util.element
 import bonsai.bim.handler
 import bonsai.tool as tool
 import bonsai.core.document as core
+import subprocess
+import os
 from bonsai.bim.module.document.data import DocumentData, ObjectDocumentData
 
 
@@ -133,7 +135,6 @@ class AddInformation(bpy.types.Operator, tool.Ifc.Operator):
         
         information = core.add_information(tool.Ifc, tool.Document, parent)
         
-        import json
         expanded_docs = []
         try:
             expanded_docs = json.loads(context.scene.ExpandedDocuments.json_string)
@@ -177,7 +178,6 @@ class AddDocumentReference(bpy.types.Operator, tool.Ifc.Operator):
         
         props.document_attributes.clear()
         core.add_reference(tool.Ifc, tool.Document)
-        import json
         expanded_docs = []
         try:
             expanded_docs = json.loads(context.scene.ExpandedDocuments.json_string)
@@ -295,7 +295,6 @@ class UnassignDocument(bpy.types.Operator, tool.Ifc.Operator):
         for obj in objs:
             element = tool.Ifc.get_entity(obj)
             if element:
-                import bonsai.core.document as core
                 core.unassign_document(tool.Ifc, product=element, document=document)
         
         props = tool.Document.get_document_props()
@@ -388,8 +387,7 @@ class OpenIFCDocument(bpy.types.Operator):
     uri: bpy.props.StringProperty(name="URI")
 
     def execute(self, context):
-        import subprocess
-        import os
+
 
         if not self.uri:
             self.report({"ERROR"}, "No URI provided")
@@ -430,7 +428,6 @@ class ToggleDocument(bpy.types.Operator, tool.Ifc.Operator):
     option: bpy.props.StringProperty()
 
     def _execute(self, context):
-        import json
         expanded_documents = []
         try:
             expanded_documents = json.loads(context.scene.ExpandedDocuments.json_string)

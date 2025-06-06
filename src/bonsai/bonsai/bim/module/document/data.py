@@ -35,7 +35,6 @@ class DocumentData:
     @classmethod
     def load(cls):
         cls.data = {
-            "total_information": cls.total_information(),
             "total_documents": cls.total_documents(),
             "total_documented_objects": cls.total_documented_objects(),
             "document_objects": cls.document_objects(),
@@ -43,34 +42,17 @@ class DocumentData:
         cls.is_loaded = True
 
     @classmethod
-    def total_information(cls):
-        return len(
-            [
-                rel
-                for rel in tool.Ifc.get().by_type("IfcProject")[0].HasAssociations or []
-                if rel.is_a("IfcRelAssociatesDocument") and rel.RelatingDocument.is_a("IfcDocumentInformation")
-            ]
-        )
-
-    @classmethod
     def total_documents(cls):
         file = tool.Ifc.get()
-        
         info_count = len(file.by_type("IfcDocumentInformation"))
         ref_count = len(file.by_type("IfcDocumentReference"))
-        
         return info_count + ref_count
 
     @classmethod
     def total_documented_objects(cls):
-        """Returns the total number of objects that have document associations"""
         file = tool.Ifc.get()
-        
         document_rels = file.by_type("IfcRelAssociatesDocument")
-        
-
         documented_objects = set()
-        
         for rel in document_rels:
             for related_object in rel.RelatedObjects:
                 obj = tool.Ifc.get_object(related_object)
@@ -81,7 +63,6 @@ class DocumentData:
 
     @classmethod
     def document_objects(cls):
-        """Returns a dictionary mapping document IDs to their referenced objects"""
         document_objects = {}
         file = tool.Ifc.get()
         
@@ -104,7 +85,6 @@ class DocumentData:
 
     @classmethod
     def load_document_objects_into_props(cls, document_id):
-        """Loads objects related to a document into property collection"""
         props = tool.Document.get_document_props()
         props.document_objects.clear()
         
