@@ -33,14 +33,14 @@ classes = (
     operator.LoadProjectDocuments,
     operator.RemoveDocument,
     operator.SelectDocumentObjects,
-    operator.ToggleDocument,  # Add this
+    operator.ToggleDocument,
     operator.UnassignDocument,
     operator.UpdateAssignedDocuments,
     operator.OpenIFCDocument,
     prop.Document,
     prop.DocumentObject,
     prop.AssignedDocument,
-    prop.ExpandedDocuments,  # Add this
+    prop.ExpandedDocuments,
     prop.BIMDocumentProperties,
     ui.BIM_PT_documents,
     ui.BIM_PT_object_documents,

@@ -187,7 +187,6 @@ class TestImportReferences(NewFile):
         ifc.createIfcProject()
         document = ifcopenshell.api.run("document.add_information", ifc)
         reference = ifcopenshell.api.run("document.add_reference", ifc, information=document)
-        subject.import_references(document)
         props = tool.Document.get_document_props()
         assert len(props.documents) == 1
         assert props.documents[0].ifc_definition_id == reference.id()

@@ -291,7 +291,6 @@ class Document:
     def get_active_breadcrumb(cls): pass
     def import_document_attributes(cls, document): pass
     def import_project_documents(cls): pass
-    def import_references(cls, document): pass
     def import_subdocuments(cls, document): pass
     def is_document_information(cls, document): pass
     def remove_latest_breadcrumb(cls): pass

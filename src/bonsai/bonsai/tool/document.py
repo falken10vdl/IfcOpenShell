@@ -241,40 +241,6 @@ class Document(bonsai.core.tool.Document):
                 cls._process_document(child, props, document_children, expanded_documents, depth + 1)
 
     @classmethod
-    def import_references(cls, document: ifcopenshell.entity_instance) -> None:
-        props = cls.get_document_props()
-        is_ifc2x3 = tool.Ifc.get_schema() == "IFC2X3"
-        references = cls.get_document_references(document)
-        
-        # Collect references first
-        reference_list = []
-        for element in references:
-            # Use Description + Location instead of Name as IFC has a restriction
-            name = " - ".join([x for x in [element.Description, element.Location] if x])
-            name = name or "Unnamed"
-            reference_list.append({
-                "element": element,
-                "id": element.id(),
-                "name": name,
-                "identification": cls.get_external_reference_id(element) or "",
-                "description": element.Description or "",
-                "location": element.Location or "",
-            })
-        
-        # Sort by identification then by description
-        reference_list.sort(key=lambda d: (d["identification"].lower(), d["description"].lower()))
-        
-        # Add to properties in sorted order
-        for ref in reference_list:
-            new = props.documents.add()
-            new.ifc_definition_id = ref["id"]
-            new["name"] = ref["name"]
-            new["identification"] = ref["identification"]
-            new["description"] = ref["description"]
-            new.location = ref["location"]
-            new.is_information = False
-
-    @classmethod
     def is_document_information(cls, document: ifcopenshell.entity_instance) -> bool:
         return document.is_a("IfcDocumentInformation")
 
