@@ -392,3 +392,31 @@ class OpenIFCDocument(bpy.types.Operator):
             self.report({"ERROR"}, f"Failed to open IFC file: {str(e)}")
 
         return {"FINISHED"}
+
+class ToggleDocument(bpy.types.Operator, tool.Ifc.Operator):
+    bl_idname = "bim.toggle_document"
+    bl_label = "Toggle Document"
+    bl_options = {"REGISTER", "UNDO"}
+    document: bpy.props.IntProperty()
+    option: bpy.props.StringProperty()
+
+    def _execute(self, context):
+        import json
+        expanded_documents = []
+        try:
+            expanded_documents = json.loads(context.scene.ExpandedDocuments.json_string)
+        except (AttributeError, json.JSONDecodeError):
+            expanded_documents = []
+            
+        document_id = self.document
+        
+        if self.option == "Expand" and document_id not in expanded_documents:
+            expanded_documents.append(document_id)
+        elif self.option == "Collapse" and document_id in expanded_documents:
+            expanded_documents.remove(document_id)
+            
+        context.scene.ExpandedDocuments.json_string = json.dumps(expanded_documents)
+        
+        # Reload documents with updated expand/collapse state
+        bpy.ops.bim.load_project_documents()
+        return {"FINISHED"}

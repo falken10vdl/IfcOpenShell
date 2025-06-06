@@ -56,6 +56,9 @@ class Document(PropertyGroup):
     is_information: BoolProperty(name="Is Information")
     ifc_definition_id: IntProperty(name="IFC Definition ID")
     location: StringProperty(name="Location", default="")
+    tree_depth: IntProperty(name="Tree Depth", default=0)
+    has_children: BoolProperty(name="Has Children", default=False)
+    is_expanded: BoolProperty(name="Is Expanded", default=False)
     
     if TYPE_CHECKING:
         name: str
@@ -64,6 +67,15 @@ class Document(PropertyGroup):
         is_information: bool
         ifc_definition_id: int
         location: str
+        tree_depth: int
+        has_children: bool
+        is_expanded: bool
+
+class ExpandedDocuments(PropertyGroup):
+    json_string: StringProperty(name="JSON String", default="[]")
+    
+    if TYPE_CHECKING:
+        json_string: str
 
 class DocumentObject(PropertyGroup):
     name: StringProperty(name="Name")

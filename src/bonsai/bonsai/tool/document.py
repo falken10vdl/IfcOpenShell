@@ -100,32 +100,129 @@ class Document(bonsai.core.tool.Document):
     def import_project_documents(cls) -> None:
         props = cls.get_document_props()
         props.documents.clear()
-        project = tool.Ifc.get().by_type("IfcProject")[0]
+        file = tool.Ifc.get()
         
-        # Collect documents first
-        documents = []
+        # Get expanded documents state
+        import json
+        expanded_documents = []
+        try:
+            expanded_documents = json.loads(bpy.context.scene.ExpandedDocuments.json_string)
+        except (AttributeError, json.JSONDecodeError):
+            expanded_documents = []
+        
+        # Build document hierarchy
+        document_children = {}  # Maps document ID to its children
+        
+        # First, identify parent-child relationships using IfcDocumentInformationRelationship
+        for rel in file.by_type("IfcDocumentInformationRelationship"):
+            parent_id = rel.RelatingDocument.id()
+            if parent_id not in document_children:
+                document_children[parent_id] = []
+            
+            # Add all related documents as children
+            for child in rel.RelatedDocuments:
+                document_children[parent_id].append(child)
+        
+        # Then find document references associated with document information
+        for ref in file.by_type("IfcDocumentReference"):
+            parent = None
+            if file.schema == "IFC2X3":
+                if ref.ReferenceToDocument:
+                    parent = ref.ReferenceToDocument[0]
+            else:
+                if hasattr(ref, "ReferencedDocument") and ref.ReferencedDocument:
+                    parent = ref.ReferencedDocument
+                    
+            if parent:
+                parent_id = parent.id()
+                if parent_id not in document_children:
+                    document_children[parent_id] = []
+                document_children[parent_id].append(ref)
+        
+        # Find root documents (those directly associated with the project)
+        root_documents = []
+        project = file.by_type("IfcProject")[0]
         for rel in project.HasAssociations or []:
             if rel.is_a("IfcRelAssociatesDocument") and rel.RelatingDocument.is_a("IfcDocumentInformation"):
-                element = rel.RelatingDocument
-                documents.append({
-                    "element": element,
-                    "id": element.id(),
-                    "name": element.Name or "Unnamed",
-                    "identification": cls.get_document_information_id(element) or "",
-                    "location": element.Location or "",
-                })
+                # Only add as root if not a child in any relationship
+                is_child = False
+                for children in document_children.values():
+                    if rel.RelatingDocument in children:
+                        is_child = True
+                        break
+                        
+                if not is_child:
+                    root_documents.append(rel.RelatingDocument)
         
-        # Sort by identification then by name
-        documents.sort(key=lambda d: (d["identification"].lower(), d["name"].lower()))
+        # Sort root documents
+        root_documents.sort(key=lambda doc: (
+            (cls.get_document_information_id(doc) or "").lower(),
+            (doc.Name or "").lower()
+        ))
         
-        # Add to properties in sorted order
-        for doc in documents:
-            new = props.documents.add()
-            new.ifc_definition_id = doc["id"]
-            new["name"] = doc["name"]
-            new.is_information = True
-            new["identification"] = doc["identification"]
-            new.location = doc["location"]
+        # Process each root document
+        for doc in root_documents:
+            cls._process_document(doc, props, document_children, expanded_documents, 0)
+
+    @classmethod
+    def _process_document(cls, document, props, document_children, expanded_documents, depth):
+        """Process a document and its children recursively"""
+        # Add this document
+        new = props.documents.add()
+        new.ifc_definition_id = document.id()
+        new.is_information = document.is_a("IfcDocumentInformation")
+        new.tree_depth = depth
+        
+        # Get the file from the document instance
+        file = document.file  # Use document's file instead of cls.file
+        
+        # Set document properties
+        if new.is_information:
+            new.name = document.Name or "Unnamed"
+            new.identification = cls.get_document_information_id(document) or ""
+            new.location = document.Location or ""
+        else:
+            new.name = document.Name or ""
+            new.identification = cls.get_external_reference_id(document) or ""
+            new.description = document.Description or ""
+            new.location = document.Location or ""
+            
+            # Add additional reference data from referenced document if applicable
+            if not new.is_information:
+                if file.schema == "IFC2X3":  # Use file from document
+                    if document.ReferenceToDocument:
+                        doc_info = document.ReferenceToDocument[0]
+                        if not new.name:
+                            new.name = doc_info.Name or ""
+                        new.location = new.location or doc_info.Location or ""
+                else:
+                    if hasattr(document, "ReferencedDocument") and document.ReferencedDocument:
+                        doc_info = document.ReferencedDocument
+                        if not new.name:
+                            new.name = doc_info.Name or ""
+                        new.location = new.location or doc_info.Location or ""
+        
+        # Check if this document has children
+        doc_id = document.id()
+        has_children = doc_id in document_children and bool(document_children[doc_id])
+        new.has_children = has_children
+        new.is_expanded = doc_id in expanded_documents
+        
+        # Process children if expanded
+        if has_children and new.is_expanded:
+            children = document_children[doc_id]
+            
+            # Sort children
+            children.sort(key=lambda doc: (
+                doc.is_a("IfcDocumentInformation"),  # Sort information docs before references
+                (cls.get_document_information_id(doc) if doc.is_a("IfcDocumentInformation") 
+                else cls.get_external_reference_id(doc) or "").lower(),
+                (doc.Name or "").lower()
+            ), reverse=True)  # Information docs first
+            
+            # Process each child
+            for child in children:
+                cls._process_document(child, props, document_children, expanded_documents, depth + 1)
 
     @classmethod
     def import_references(cls, document: ifcopenshell.entity_instance) -> None:

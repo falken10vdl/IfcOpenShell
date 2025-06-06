@@ -208,29 +208,44 @@ class BIM_UL_documents(UIList):
     def draw_item(self, context, layout, data, item, icon, active_data, active_propname):
         if item:
             row = layout.row(align=True)
+            
+            # Add indentation based on tree_depth
+            for i in range(0, item.tree_depth):
+                row.label(text="", icon="BLANK1")
+                
+            # Show expand/collapse toggle for information documents with children
+            if item.is_information and item.has_children:
+                op = row.operator(
+                    "bim.toggle_document", 
+                    icon="TRIA_DOWN" if item.is_expanded else "TRIA_RIGHT", 
+                    text="", 
+                    emboss=False
+                )
+                op.document = item.ifc_definition_id
+                op.option = "Collapse" if item.is_expanded else "Expand"
+            elif item.is_information:
+                # Placeholder for alignment when there's no toggle
+                row.label(text="", icon="BLANK1")
 
             # Document type icons (information or reference)
             if item.is_information:
-                op = row.operator("bim.load_document", text="", emboss=False, icon="DISCLOSURE_TRI_RIGHT")
-                op.document = item.ifc_definition_id
                 row.label(text="", icon="FILE")
                 text = " - ".join([x for x in [item.name, item.location] if x])
             else:
-                row.label(text="", icon="BLANK1")
                 row.label(text="", icon="FILE_HIDDEN")
                 text = " - ".join([x for x in [item.description, item.location] if x])
 
             # Identification and name/description-location
             split1 = row.split(factor=0.1)
             split1.prop(item, "identification", text="", emboss=False)
-            split2 = split1.split(factor=0.8)  # Adjust factor to make room for icons
+            split2 = split1.split(factor=0.8)
             split2.label(text=text)
 
             if item.location:
                 if item.location.lower().endswith(".ifc"):
                     row.operator("bim.open_ifc_document", icon="HIDE_OFF", text="").uri = item.location
                 row.operator("bim.open_uri", icon="URL", text="").uri = item.location
-    
+  
 class BIM_UL_document_objects(UIList):
     def draw_item(self, context, layout, data, item, icon, active_data, active_propname):
         if item:

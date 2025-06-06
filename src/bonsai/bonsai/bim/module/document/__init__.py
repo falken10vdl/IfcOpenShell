@@ -34,12 +34,14 @@ classes = (
     operator.LoadProjectDocuments,
     operator.RemoveDocument,
     operator.SelectDocumentObjects,
+    operator.ToggleDocument,  # Add this
     operator.UnassignDocument,
     operator.UpdateAssignedDocuments,
     operator.OpenIFCDocument,
     prop.Document,
     prop.DocumentObject,
     prop.AssignedDocument,
+    prop.ExpandedDocuments,  # Add this
     prop.BIMDocumentProperties,
     ui.BIM_PT_documents,
     ui.BIM_PT_object_documents,
@@ -54,6 +56,7 @@ def register():
     from bpy.types import VIEW3D_MT_object_context_menu
 
     bpy.types.Scene.BIMDocumentProperties = bpy.props.PointerProperty(type=prop.BIMDocumentProperties)
+    bpy.types.Scene.ExpandedDocuments = bpy.props.PointerProperty(type=prop.ExpandedDocuments)  # Add this
     VIEW3D_MT_object_context_menu.append(ui.add_object_documents_context_menu)
 
 
@@ -62,3 +65,4 @@ def unregister():
 
     VIEW3D_MT_object_context_menu.remove(ui.add_object_documents_context_menu)
     del bpy.types.Scene.BIMDocumentProperties
+    del bpy.types.Scene.ExpandedDocuments  # Add this
