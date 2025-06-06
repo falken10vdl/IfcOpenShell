@@ -128,8 +128,42 @@ class AddInformation(bpy.types.Operator, tool.Ifc.Operator):
     bl_options = {"REGISTER", "UNDO"}
 
     def _execute(self, context):
-        core.add_information(tool.Ifc, tool.Document)
-
+        props = tool.Document.get_document_props()
+        
+        # Determine parent document based on selection
+        parent = None
+        if props.documents and props.active_document_index < len(props.documents):
+            selected_document = props.documents[props.active_document_index]
+            
+            # Only use as parent if the selected document is an information element
+            if selected_document.is_information:
+                parent = tool.Ifc.get().by_id(selected_document.ifc_definition_id)
+            else:
+                # Report that we can't add an information element as a child of a reference
+                self.report({"ERROR"}, "Cannot add an information element as a child of a reference element")
+                return {"CANCELLED"}
+        
+        # Add information using the core function, passing the selected parent
+        information = core.add_information(tool.Ifc, tool.Document, parent)
+        
+        # Update expanded documents list to ensure new parent is expanded and child is visible
+        if parent and parent.is_a("IfcDocumentInformation"):
+            import json
+            expanded_docs = []
+            try:
+                expanded_docs = json.loads(context.scene.ExpandedDocuments.json_string)
+            except (AttributeError, json.JSONDecodeError):
+                pass
+                
+            # Ensure the parent is expanded
+            if parent.id() not in expanded_docs:
+                expanded_docs.append(parent.id())
+                context.scene.ExpandedDocuments.json_string = json.dumps(expanded_docs)
+        
+        # Reload project documents to update UI
+        bpy.ops.bim.load_project_documents()
+        
+        return {"FINISHED"}
 
 class AddDocumentReference(bpy.types.Operator, tool.Ifc.Operator):
     bl_idname = "bim.add_document_reference"

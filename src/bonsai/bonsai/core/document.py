@@ -66,17 +66,39 @@ def disable_editing_document(document: tool.Document) -> None:
     document.disable_editing_document()
 
 
-def add_information(ifc: tool.Ifc, document: tool.Document) -> None:
-    document.clear_document_tree()
-    parent = document.get_active_breadcrumb()
+def add_information(ifc: tool.Ifc, document_tool: tool.Document, parent=None) -> ifcopenshell.entity_instance:
+    """Add a new document information to the project
+    
+    Args:
+        ifc: The IFC tool
+        document_tool: The Document tool
+        parent: Optional parent document, determined from UI selection
+        
+    Returns:
+        The newly created document information
+    """
+    document_tool.clear_document_tree()
+    
+    # If no parent is provided, try to get it from breadcrumbs (for backward compatibility)
+    if parent is None:
+        parent = document_tool.get_active_breadcrumb()
+    
+    # If still no parent, use the project
+    if parent is None and ifc.get().by_type("IfcProject"):
+        parent = ifc.get().by_type("IfcProject")[0]
+    
+    # Create the information and reference using the IFC API
     information = ifc.run("document.add_information", parent=parent)
     ifc.run("document.add_reference", information=information)
-    if parent:
-        document.import_subdocuments(parent)
-        document.import_references(parent)
+    
+    # Update the UI display based on context
+    if parent and parent.is_a("IfcDocumentInformation"):
+        document_tool.import_subdocuments(parent)
+        document_tool.import_references(parent)
     else:
-        document.import_project_documents()
-
+        document_tool.import_project_documents()
+        
+    return information
 
 def add_reference(ifc: tool.Ifc, document: tool.Document) -> None:
     parent = document.get_active_breadcrumb()
