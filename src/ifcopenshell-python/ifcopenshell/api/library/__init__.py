@@ -26,11 +26,13 @@ system, and so on. This is typically useful in smart building systems.
 from .. import wrap_usecases
 from .add_library import add_library
 from .add_reference import add_reference
+from .assign_library import assign_library
 from .assign_reference import assign_reference
 from .edit_library import edit_library
 from .edit_reference import edit_reference
 from .remove_library import remove_library
 from .remove_reference import remove_reference
+from .unassign_library import unassign_library
 from .unassign_reference import unassign_reference
 
 wrap_usecases(__path__, __name__)
@@ -38,10 +40,12 @@ wrap_usecases(__path__, __name__)
 __all__ = [
     "add_library",
     "add_reference",
+    "assign_library",
     "assign_reference",
     "edit_library",
     "edit_reference",
     "remove_library",
     "remove_reference",
+    "unassign_library",
     "unassign_reference",
 ]

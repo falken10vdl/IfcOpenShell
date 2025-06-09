@@ -68,6 +68,7 @@ modules = {
     "qto": None,
     "classification": None,
     "library": None,
+    "documentLibrary": None,
     "constraint": None,
     "document": None,
     "pset_template": None,

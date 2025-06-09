@@ -240,7 +240,7 @@ class RefreshLibrary(bpy.types.Operator):
 
         ifc_project = library_file.by_type("IfcProject")[0]
         hierarchy = tool.Project.get_project_hierarchy(library_file)
-        tool.Project.load_project_libraries_to_ui(ifc_project, hierarchy)
+        tool.Project.load_project_document_libraries_to_ui(ifc_project, hierarchy)
         return {"FINISHED"}
 
 
@@ -305,7 +305,7 @@ class ChangeLibraryElement(bpy.types.Operator):
             hierarchy = tool.Project.get_project_hierarchy(library_file)
             assert active_project_library is not None
             if active_project_library != "NO_LIBRARY" and hierarchy[active_project_library]:
-                tool.Project.load_project_libraries_to_ui(active_project_library, hierarchy)
+                tool.Project.load_project_document_libraries_to_ui(active_project_library, hierarchy)
 
             for appendable_type in sorted(tool.Project.get_appendable_asset_types()):
                 elements = library_file.by_type(appendable_type)

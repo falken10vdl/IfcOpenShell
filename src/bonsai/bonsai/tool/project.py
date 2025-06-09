@@ -381,7 +381,7 @@ class Project(bonsai.core.tool.Project):
         return hierarchy
 
     @classmethod
-    def load_project_libraries_to_ui(
+    def load_project_document_libraries_to_ui(
         cls, parent_library: ifcopenshell.entity_instance, hierarchy: HiearchyDict
     ) -> None:
         libraries = hierarchy[parent_library]

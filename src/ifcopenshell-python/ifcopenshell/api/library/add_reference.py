@@ -56,4 +56,6 @@ def add_reference(file: ifcopenshell.file, library: ifcopenshell.entity_instance
         references.append(reference)
         library.LibraryReference = references
         return reference
-    return file.createIfcLibraryReference(ReferencedLibrary=library)
+    return file.createIfcLibraryReference(ReferencedLibrary=library,
+                                          Identification="X",
+                                          Location="")

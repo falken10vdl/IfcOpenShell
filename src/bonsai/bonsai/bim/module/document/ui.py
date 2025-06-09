@@ -66,7 +66,7 @@ class BIM_PT_documents(Panel):
 
             if self.props.documents and self.props.active_document_index < len(self.props.documents):
                 active_doc = self.props.documents[self.props.active_document_index]
-                if active_doc.is_information:
+                if active_doc.is_information and active_doc.ifc_definition_id != -1:
                     row.operator("bim.add_document_reference", text="", icon="FILE_HIDDEN")
 
             active_document = self.props.active_document
@@ -87,6 +87,20 @@ class BIM_PT_documents(Panel):
                 draw_attributes(self.props.document_attributes, self.layout)
             else:
                 draw_attributes(self.props.document_attributes, self.layout, filter_attributes=["Name"])
+
+        if self.props.is_editing and self.props.documents and self.props.active_document_index < len(self.props.documents):
+            document = self.props.documents[self.props.active_document_index]
+            box = self.layout.box()
+            row = box.row(align=True)
+            row.label(text="Assigned Objects", icon="OUTLINER_OB_EMPTY")
+            box.template_list(
+                "BIM_UL_document_objects", 
+                "", 
+                self.props, 
+                "document_objects", 
+                self.props, 
+                "active_document_object_index"
+            )
 
 class BIM_PT_object_documents(Panel):
     bl_label = "Documents"

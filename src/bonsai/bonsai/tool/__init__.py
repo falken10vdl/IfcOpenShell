@@ -32,6 +32,7 @@ from bonsai.tool.covering import Covering
 from bonsai.tool.debug import Debug
 from bonsai.tool.demo import Demo
 from bonsai.tool.document import Document
+from bonsai.tool.documentLibrary import DocumentLibrary
 from bonsai.tool.drawing import Drawing
 from bonsai.tool.feature import Feature
 from bonsai.tool.geometry import Geometry
