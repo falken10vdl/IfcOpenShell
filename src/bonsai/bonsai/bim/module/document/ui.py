@@ -43,12 +43,19 @@ class BIM_PT_documents(Panel):
         self.props = tool.Document.get_document_props()
 
         row = self.layout.row(align=True)
-        row.label(text="{} Documents Found".format(DocumentData.data["total_documents"]), icon="FILE")
-        row.label(text="{} Objects Assigned".format(DocumentData.data["total_documented_objects"]), icon="OBJECT_DATA")
+        split = row.split(factor=0.55)
+
+        left_row = split.row(align=True)
+        left_row.label(text="{} Informations".format(DocumentData.data["total_document_informations"]), icon="FILE")
+        left_row.label(text="{} References".format(DocumentData.data["total_document_references"]), icon="FILE_HIDDEN")
+
+        right_row = split.row(align=True)
+        right_row.label(text="{} Objects Referenced".format(DocumentData.data["total_referenced_objects"]), icon="OBJECT_DATA")
+
         if self.props.is_editing:
-            row.operator("bim.disable_document_editing_ui", text="", icon="CANCEL")
+            right_row.operator("bim.disable_document_editing_ui", text="", icon="CANCEL")
         else:
-            row.operator("bim.load_project_documents", text="", icon="IMPORT")
+            right_row.operator("bim.load_project_documents", text="", icon="IMPORT")
 
         if not self.props.is_editing:
             return

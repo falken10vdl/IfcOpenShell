@@ -35,19 +35,25 @@ class DocumentLibraryData:
     @classmethod
     def load(cls):
         cls.data = {
-            "total_libraries": cls.total_libraries(),
+            "total_library_informations": cls.total_library_informations(),
+            "total_library_references": cls.total_library_references(),
             "total_referenced_objects": cls.total_referenced_objects(),
             "library_objects": cls.library_objects(),
         }
         cls.is_loaded = True
 
     @classmethod
-    def total_libraries(cls):
+    def total_library_informations(cls):
         file = tool.Ifc.get()
         info_count = len(file.by_type("IfcLibraryInformation"))
-        ref_count = len(file.by_type("IfcLibraryReference"))
-        return info_count + ref_count
+        return info_count
 
+    @classmethod
+    def total_library_references(cls):
+        file = tool.Ifc.get()
+        ref_count = len(file.by_type("IfcLibraryReference"))
+        return ref_count
+    
     @classmethod
     def total_referenced_objects(cls):
         file = tool.Ifc.get()

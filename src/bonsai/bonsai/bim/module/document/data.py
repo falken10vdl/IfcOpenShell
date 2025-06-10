@@ -35,21 +35,27 @@ class DocumentData:
     @classmethod
     def load(cls):
         cls.data = {
-            "total_documents": cls.total_documents(),
-            "total_documented_objects": cls.total_documented_objects(),
+            "total_document_informations": cls.total_document_informations(),
+            "total_document_references": cls.total_document_references(),
+            "total_referenced_objects": cls.total_referenced_objects(),
             "document_objects": cls.document_objects(),
         }
         cls.is_loaded = True
 
     @classmethod
-    def total_documents(cls):
+    def total_document_informations(cls):
         file = tool.Ifc.get()
         info_count = len(file.by_type("IfcDocumentInformation"))
-        ref_count = len(file.by_type("IfcDocumentReference"))
-        return info_count + ref_count
+        return info_count
 
     @classmethod
-    def total_documented_objects(cls):
+    def total_document_references(cls):
+        file = tool.Ifc.get()
+        ref_count = len(file.by_type("IfcDocumentReference"))
+        return ref_count
+
+    @classmethod
+    def total_referenced_objects(cls):
         file = tool.Ifc.get()
         document_rels = file.by_type("IfcRelAssociatesDocument")
         documented_objects = set()

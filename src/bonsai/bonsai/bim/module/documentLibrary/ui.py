@@ -43,12 +43,19 @@ class BIM_PT_documentlibraries(Panel):
         self.props = tool.DocumentLibrary.get_library_props()
 
         row = self.layout.row(align=True)
-        row.label(text="{} Libraries Found".format(DocumentLibraryData.data["total_libraries"]), icon="ASSET_MANAGER")
-        row.label(text="{} Objects Referenced".format(DocumentLibraryData.data["total_referenced_objects"]), icon="OBJECT_DATA")
+        split = row.split(factor=0.55)
+
+        left_row = split.row(align=True)
+        left_row.label(text="{} Informations".format(DocumentLibraryData.data["total_library_informations"]), icon="ASSET_MANAGER")
+        left_row.label(text="{} References".format(DocumentLibraryData.data["total_library_references"]), icon="BOOKMARKS")
+
+        right_row = split.row(align=True)
+        right_row.label(text="{} Objects Referenced".format(DocumentLibraryData.data["total_referenced_objects"]), icon="OBJECT_DATA")
+
         if self.props.is_editing:
-            row.operator("bim.disable_library_editing_ui", text="", icon="CANCEL")
+            right_row.operator("bim.disable_library_editing_ui", text="", icon="CANCEL")
         else:
-            row.operator("bim.load_project_document_libraries", text="", icon="IMPORT")
+            right_row.operator("bim.load_project_document_libraries", text="", icon="IMPORT")
 
         if not self.props.is_editing:
             return
@@ -291,8 +298,8 @@ def add_object_libraries_context_menu(self, context):
     if not tool.Blender.get_ifc_definition_id(context.active_object):
         return
 
-    self.layout.separator()
     self.layout.menu("BIM_MT_object_libraries_context_menu", icon="ASSET_MANAGER")
+    self.layout.separator()
 
 
 class BIM_MT_object_libraries_context_menu(bpy.types.Menu):
@@ -318,13 +325,37 @@ class BIM_MT_object_libraries_context_menu(bpy.types.Menu):
         if not ObjectDocumentLibraryData.is_loaded:
             ObjectDocumentLibraryData.load()
 
-        if not ObjectDocumentLibraryData.data["libraries"]:
+        if not ObjectDocumentLibraryData.data.get("libraries", []):
             layout.label(text="No Libraries", icon="ASSET_MANAGER")
         else:
             for library in ObjectDocumentLibraryData.data["libraries"]:
-                row = layout.row()
-                row.label(text=f"{library['identification'] or ''} {library['name'] or library['description'] or ''}")
+                row = layout.row(align=True)
+
+                with_ifc_icon = library.get("location", "") and library["location"].lower().endswith(".ifc")
+                with_url_icon = bool(library.get("location", ""))
                 
-                if library["location"]:
-                    op = row.operator("bim.open_uri", text="", icon="URL")
-                    op.uri = library["location"]
+                if with_ifc_icon:
+                    row.operator("bim.open_ifc_library", icon="HIDE_OFF", text="").uri = library["location"]
+                else:
+                    row.label(text="", icon="BLANK1")
+                
+                if with_url_icon:
+                    row.operator("bim.open_uri", icon="URL", text="").uri = library["location"]
+                else:
+                    row.label(text="", icon="BLANK1")
+                
+                lib_entity = None
+                if "id" in library:
+                    lib_entity = tool.Ifc.get().by_id(library["id"])
+
+                if lib_entity and lib_entity.is_a("IfcLibraryReference"):
+                    display_text = library.get("description") or ""
+                else:
+                    display_text = library.get("name") or ""
+                
+                # Safely access identification
+                identification = library.get("identification", "")
+                if identification:
+                    row.label(text=f"{identification}: {display_text}")
+                else:
+                    row.label(text=display_text)
