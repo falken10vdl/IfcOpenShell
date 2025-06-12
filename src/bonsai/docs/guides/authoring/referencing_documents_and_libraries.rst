@@ -80,6 +80,12 @@ Example Use Cases:
     5.  Edit the selected document. This will open a new panel where you can edit the properties of the document, such as its name, description, and file path.
     6.  Remove the selected document and its children from the project. This will remove the document(s) and all its associations with objects.
 
+    In the "Assigned Objects" subpanel, you can also perform the following actions:
+    
+    .. image:: images/actions_for_assigned_objects.png
+    
+    1.  Select the object in the 3D viewport that is assigned to the selected document.
+    2.  Unassign the selected object from the selected document. This will remove the association between the document and the object.
 
 2.  **Misc.** panel in the **Object Information** tab
 
