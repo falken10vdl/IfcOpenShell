@@ -184,7 +184,7 @@ class BIM_PT_object_libraries(Panel):
                     assigned_lib_ids.append(lib["id"])
                 
                 if library.ifc_definition_id not in assigned_lib_ids:
-                    row.operator("bim.assign_library", text="", icon="ADD").library = library.ifc_definition_id
+                    row.operator("bim.assign_library", text="", icon="BRUSH_DATA").library = library.ifc_definition_id
                 else:
                     row.operator("bim.unassign_library", text="", icon="REMOVE").library = library.ifc_definition_id
             
