@@ -285,9 +285,10 @@ class BIM_UL_assigned_libraries(UIList):
                 split2.label(text=item.description or "")
 
             if item.location:
+                if item.location.lower().endswith(".ifc"):
+                    row.operator("bim.open_ifc_document", icon="HIDE_OFF", text="").uri = item.location
                 row.operator("bim.open_uri", icon="URL", text="").uri = item.location
-            
-            op = row.operator("bim.unassign_library", text="", icon="X")
+            op = row.operator("bim.unassign_document", text="", icon="X")
             op.library = item.ifc_definition_id
 
 
