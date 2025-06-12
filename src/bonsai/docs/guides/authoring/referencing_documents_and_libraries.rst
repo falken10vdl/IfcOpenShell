@@ -35,9 +35,9 @@ For any **IfcLibraryInformation** element, you can have multiple **IfcLibraryRef
 
 In Bonsai, you can create and manage these documents and libraries within three differente places:
 
-- The **Project Setup** panel in the **Project Overview** tab.
-- The **Misc.** panel in the **Object Information** tab.
-- The context menu that appears when you right-click on the 3D viewport.
+- The **Project Setup** panel in the **Project Overview** tab. This is where you can create and update documents and libraries, and manage their associations with specific objects.
+- The **Misc.** panel in the **Object Information** tab. This is where you can focus for a selected Object in the documents and libraries associated with it.
+- The context menu that appears when you right-click on the 3D viewport. This is a convenient productivity shortcut to view and open the documents and libraries for a selected object.
 
 
 Documents
@@ -55,6 +55,35 @@ Example Use Cases:
 - Link a structural slab to its PDF specification
 - Attach fire safety certificates to building storeys
 - Reference maintenance manuals for equipment
+
+1.  **Project Setup** panel in the **Project Overview** tab
+    If you select the Documents panel you will see something like this below:
+    
+    .. image:: images/documents_in_project_tab.png
+
+    At the top you have a summary of how many documents of type "informations" (**IfcDocumentInformation**) and "references" (**IfcDocumentReference**) are in the project and how many objects are assigned.
+    
+    Then you have two subpanels. 
+    
+    The upper one ("Project Documents") shows the tree structure of the documents in the project, where you can create new documents and manage their hierarchy.
+    
+    The lower one ("Assigned Objects") shows the list of all objects that are assigned for the document element selected in the row of the upper panel.
+    
+    Here are the actions that can be performed in this panel:
+
+    .. image:: images/actions_for_documents.png
+
+    1.  Add an information document to the project (**IfcDocumentInformation**). This can only be done at root level or below another information document.
+    2.  Add a reference document to the project (**IfcDocumentReference**). This can only be done below an information document.
+    3.  Select all objects assigned to the selected document.
+    4.  Assign the selected document to the selected objects.
+    5.  Edit the selected document. This will open a new panel where you can edit the properties of the document, such as its name, description, and file path.
+    6.  Remove the selected document and its children from the project. This will remove the document(s) and all its associations with objects.
+
+
+2.  **Misc.** panel in the **Object Information** tab
+
+3.  Context menu in the 3D viewport
 
 Libraries
 ---------
