@@ -39,13 +39,12 @@ and data-rich OpenBIM with Blender :)
    .. toctree::
       :hidden:
       :caption: Quickstart
-      :maxdepth: 2
+      :maxdepth: 1
 
       quickstart/introduction_to_bim
       quickstart/installation
       quickstart/explore_model
       quickstart/create_model
-      quickstart/ide/index
       quickstart/next_steps
 
    .. toctree::
@@ -61,6 +60,8 @@ and data-rich OpenBIM with Blender :)
       guides/authoring/other_addons
       guides/troubleshooting
       guides/debugging
+      guides/coordination/spreadsheet_export
+      guides/authoring/referencing_documents_and_libraries
 
    .. toctree::
       :hidden:
