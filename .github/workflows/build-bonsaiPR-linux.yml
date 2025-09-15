@@ -1,21 +1,19 @@
-name: Build BonsaiPR Addon
+name: Build BonsaiPR Addon (Linux)
 
 on:
   schedule:
     - cron: '0 3 * * *'  # Daily at 03:00 UTC
   workflow_dispatch:
     inputs:
-      platforms:
-        description: 'Comma-separated platforms to build (linux,windows,macos)'
+      platform:
+        description: 'Platform to build'
         required: true
         default: 'linux'
 
 jobs:
-  build:
-    strategy:
-      matrix:
-        os: ${{ fromJSON('["' + join(split(github.event.inputs.platforms, ","), '","') + '"]') }}
-    runs-on: ${{ matrix.os == 'linux' && 'ubuntu-latest' || matrix.os == 'windows' && 'windows-latest' || matrix.os == 'macos' && 'macos-latest' }}
+  build-linux:
+    if: ${{ github.event.inputs.platform == 'linux' }}
+    runs-on: ubuntu-latest
 
     steps:
       # 1️⃣ Checkout your fork
@@ -33,16 +31,13 @@ jobs:
 
       # 3️⃣ Install GitHub CLI
       - name: Install GitHub CLI
-        if: matrix.os == 'linux'  # Only Linux step, change if needed for Windows/macOS
         run: sudo apt install -y gh
 
       - name: Authenticate GitHub CLI
-        if: matrix.os == 'linux'
         run: gh auth status || gh auth login --with-token <<< "${{ secrets.GITHUB_TOKEN }}"
 
       # 4️⃣ Merge PRs from allowed owners
       - name: Merge PRs from allowed owners
-        if: matrix.os == 'linux'
         id: merge_prs
         run: |
           ALLOWED_OWNERS="falken10vdl"
@@ -65,9 +60,8 @@ jobs:
           echo "merged_prs=$merged_prs" >> $GITHUB_OUTPUT
           echo "pr_owners=$ALLOWED_OWNERS" >> $GITHUB_OUTPUT
 
-      # 5️⃣ Install build dependencies
+      # 5️⃣ Install Linux build dependencies
       - name: Install build dependencies
-        if: matrix.os == 'linux'
         run: |
           sudo apt update
           sudo apt install -y gcc g++ git make zip libffi-dev \
@@ -78,25 +72,20 @@ jobs:
 
       # 6️⃣ Setup Python 3.11
       - name: Setup Python 3.11
-        if: matrix.os == 'linux'
         uses: actions/setup-python@v4
         with:
           python-version: 3.11
 
       # 7️⃣ Get version and date for release tag
       - name: Get current version
-        if: matrix.os == 'linux'
         id: version
         run: echo "version=$(cat VERSION)" >> $GITHUB_OUTPUT
-
       - name: Get current date
-        if: matrix.os == 'linux'
         id: date
         run: echo "date=$(date +'%y%m%d%H%M')" >> $GITHUB_OUTPUT
 
       # 8️⃣ Build Bonsai
       - name: Build BonsaiPR
-        if: matrix.os == 'linux'
         run: |
           cd src/bonsai
           rm -rf build dist
@@ -108,7 +97,6 @@ jobs:
 
       # 9️⃣ Find and rename zip with owner-based prefix
       - name: Find and rename zip
-        if: matrix.os == 'linux'
         id: find_zip
         run: |
           original=$(ls src/bonsai/dist/bonsai_*.zip)
@@ -122,7 +110,6 @@ jobs:
 
       # 🔟 Upload zip to GitHub release
       - name: Upload zip to release
-        if: matrix.os == 'linux'
         uses: svenstaro/upload-release-action@v2
         with:
           repo_token: ${{ secrets.GITHUB_TOKEN }}
