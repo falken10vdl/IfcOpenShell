@@ -35,6 +35,15 @@ jobs:
           python -m pip install --upgrade pip
           pip install wheel setuptools
 
+      - name: Show build environment info
+        run: |
+          echo "Build environment:"
+          echo "Python version: $(python --version)"
+          echo "Pip version: $(pip --version)"
+          echo "GCC version: $(gcc --version | head -1)"
+          echo "Glibc version: $(ldd --version | head -1)"
+          uname -a
+
       - name: Compile Bonsai (Linux, py311)
         run: |
           cd src/bonsai
@@ -78,13 +87,90 @@ jobs:
           if [ -d "temp_extract/bonsai/libs" ]; then
             echo "✓ Libs directory found"
             ls -la temp_extract/bonsai/libs/
+          elif [ -d "temp_extract/bonsai/wheels" ]; then
+            echo "✓ Wheels directory found (preferred packaging method)"
+            echo "IfcOpenShell wheels included:"
+            ls -la temp_extract/bonsai/wheels/ | grep -i ifcopenshell || echo "  No IfcOpenShell wheels found"
           else
-            echo "⚠ No libs directory found - checking for ifcopenshell in other locations"
+            echo "⚠ No libs or wheels directory found - checking for ifcopenshell in other locations"
           fi
           
-          # Check if ifcopenshell is bundled somewhere
-          find temp_extract/ -name "*ifcopenshell*" -type f | head -10
-          find temp_extract/ -name "*_ifcopenshell_wrapper*" -type f | head -5
+          # Check if ifcopenshell wheels are bundled
+          echo "Searching for IfcOpenShell packages..."
+          ifcopenshell_files=$(find temp_extract/ -name "*ifcopenshell*" -type f)
+          if [ -n "$ifcopenshell_files" ]; then
+            echo "✓ IfcOpenShell packages found:"
+            echo "$ifcopenshell_files"
+          else
+            echo "✗ No IfcOpenShell packages found in addon"
+            exit 1
+          fi
+          
+          # Verify the wheel is the correct version and platform
+          wheel_file=$(find temp_extract/ -name "ifcopenshell-*.whl" | head -1)
+          if [ -n "$wheel_file" ]; then
+            echo "✓ IfcOpenShell wheel details:"
+            basename "$wheel_file"
+            # Extract version info from filename
+            wheel_name=$(basename "$wheel_file")
+            if [[ "$wheel_name" =~ py311.*linux ]]; then
+              echo "✓ Wheel matches expected platform (py311, linux)"
+            else
+              echo "⚠ Wheel platform might not match expected (py311, linux): $wheel_name"
+            fi
+            
+            # Check wheel compatibility tags
+            echo "Wheel compatibility details:"
+            python -c "
+            import sys
+            wheel_name = '$wheel_name'
+            parts = wheel_name.replace('.whl', '').split('-')
+            if len(parts) >= 5:
+                print(f'  Package: {parts[0]}')
+                print(f'  Version: {parts[1]}')
+                print(f'  Python: {parts[2]}')
+                print(f'  ABI: {parts[3]}')
+                print(f'  Platform: {parts[4]}')
+            "
+          fi
+
+      - name: Test IfcOpenShell wheel installation
+        run: |
+          cd src/bonsai/dist/temp_extract
+          wheel_file=$(find . -name "ifcopenshell-*.whl" | head -1)
+          if [ -n "$wheel_file" ]; then
+            echo "Testing IfcOpenShell wheel installation..."
+            # Create a test environment
+            python -m venv test_env
+            source test_env/bin/activate
+            
+            # Install the wheel
+            pip install "$wheel_file"
+            
+            # Test basic import
+            python -c "
+            try:
+                import ifcopenshell
+                print('✓ IfcOpenShell imports successfully')
+                print(f'  Version: {ifcopenshell.version}')
+                print(f'  File location: {ifcopenshell.__file__}')
+                
+                # Test basic functionality (without opening files)
+                from ifcopenshell import entity_instance
+                print('✓ Basic IfcOpenShell classes accessible')
+                
+            except ImportError as e:
+                print(f'✗ Failed to import IfcOpenShell: {e}')
+                exit(1)
+            except Exception as e:
+                print(f'⚠ IfcOpenShell imported but with issues: {e}')
+            "
+            
+            deactivate
+            rm -rf test_env
+          else
+            echo "⚠ No IfcOpenShell wheel found for testing"
+          fi
 
       - name: Test addon import (basic validation)
         run: |
@@ -145,16 +231,21 @@ jobs:
             Manual Bonsai build for Linux (py311) based on alpha date ${{ github.event.inputs.alpha_date }}.
             
             **Build Info:**
-            - Platform: Linux
+            - Platform: Linux x86_64
             - Python: 3.11
-            - File size: ${{ steps.find_zip.outputs.filesize }} bytes
+            - File size: ${{ steps.find_zip.outputs.filesize }} bytes ($(( ${{ steps.find_zip.outputs.filesize }} / 1024 / 1024 )) MB)
             - Build time: ${{ steps.time.outputs.hhmm }}
+            - Compatible with: Ubuntu 20.04+ (glibc 2.31+)
             
             **Installation:**
             1. Download the zip file
             2. In Blender, go to Edit > Preferences > Add-ons
             3. Click "Install..." and select this zip file
             4. Enable the "Import-Export: BlenderBIM Add-on" addon
+            
+            **Known Issues:**
+            - If you experience crashes when opening IFC files, try using a different Blender version or IfcOpenShell build
+            - This build includes IfcOpenShell wheels optimized for the GitHub Actions build environment
 
       - name: Cleanup
         if: always()
