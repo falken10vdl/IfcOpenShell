@@ -40,7 +40,7 @@ jobs:
       - name: Merge PRs from allowed owners
         id: merge_prs
         run: |
-          ALLOWED_OWNERS="falken10vdl"
+          ALLOWED_OWNERS=""
           git remote add upstream https://github.com/IfcOpenShell/IfcOpenShell.git
           git fetch upstream
           MAIN_BRANCH=$(git remote show origin | grep 'HEAD branch' | cut -d':' -f2 | tr -d ' ')
