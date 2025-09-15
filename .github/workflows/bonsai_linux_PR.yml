@@ -30,12 +30,6 @@ jobs:
         id: time
         run: echo "hhmm=$(date +'%H%M')" >> $GITHUB_OUTPUT
 
-      - name: Recompile ifcopenshell
-        run: |
-          cd src/bonsai/ifcopenshell
-          make clean
-          make -j$(nproc)
-
       - name: Compile Bonsai (Linux, py311)
         run: |
           cd src/bonsai
