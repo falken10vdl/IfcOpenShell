@@ -15,43 +15,33 @@ jobs:
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
-        os: [ubuntu-latest, macos-latest, windows-latest]
-    env:
-      PLATFORMS: ${{ github.event.inputs.platforms }}
-    steps:
-      # 1️⃣ Skip platform if not selected
-      - name: Skip platform if not selected
-        if: ${{ !contains(env.PLATFORMS, matrix.os == 'ubuntu-latest' && 'linux' || matrix.os == 'macos-latest' && 'macos' || matrix.os == 'windows-latest' && 'windows') }}
-        run: |
-          echo "Platform ${{ matrix.os }} not selected, skipping..."
-          exit 0
+        os: ${{ fromJSON('["' + join(split(github.event.inputs.platforms, ","), '","') + '"]') }}
 
-      # 2️⃣ Checkout your fork
+    steps:
+      # 1️⃣ Checkout your fork
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
           submodules: recursive
 
-      # 3️⃣ Configure Git
+      # 2️⃣ Configure Git
       - name: Configure Git
         run: |
           git config --global user.name "github-actions"
           git config --global user.email "actions@github.com"
 
-      # 4️⃣ Install GitHub CLI
+      # 3️⃣ Install GitHub CLI
       - name: Install GitHub CLI
         if: runner.os == 'Linux'
         run: sudo apt install -y gh
 
       - name: Authenticate GitHub CLI
-        if: runner.os == 'Linux'
         run: gh auth status || gh auth login --with-token <<< "${{ secrets.GITHUB_TOKEN }}"
 
-      # 5️⃣ Merge PRs from allowed owners (Linux only for now)
+      # 4️⃣ Merge PRs from allowed owners
       - name: Merge PRs from allowed owners
         id: merge_prs
-        if: runner.os == 'Linux'
         run: |
           ALLOWED_OWNERS="falken10vdl"
           git remote add upstream https://github.com/IfcOpenShell/IfcOpenShell.git
@@ -73,9 +63,9 @@ jobs:
           echo "merged_prs=$merged_prs" >> $GITHUB_OUTPUT
           echo "pr_owners=$ALLOWED_OWNERS" >> $GITHUB_OUTPUT
 
-      # 6️⃣ Install build dependencies (Linux only for now)
+      # 5️⃣ Install build dependencies (Linux only)
       - name: Install build dependencies
-        if: runner.os == 'Linux'
+        if: matrix.os == 'linux'
         run: |
           sudo apt update
           sudo apt install -y gcc g++ git make zip libffi-dev \
@@ -84,14 +74,14 @@ jobs:
           python3 -m pip install --upgrade pip
           python3 -m pip install typing_extensions
 
-      # 7️⃣ Setup Python 3.11 (Linux & macOS)
+      # 6️⃣ Setup Python 3.11 (Linux only)
       - name: Setup Python 3.11
-        if: runner.os != 'Windows'
+        if: matrix.os == 'linux'
         uses: actions/setup-python@v4
         with:
           python-version: 3.11
 
-      # 8️⃣ Get version and date for release
+      # 7️⃣ Get version and date for release tag
       - name: Get current version
         id: version
         run: echo "version=$(cat VERSION)" >> $GITHUB_OUTPUT
@@ -99,21 +89,18 @@ jobs:
         id: date
         run: echo "date=$(date +'%y%m%d%H%M')" >> $GITHUB_OUTPUT
 
-      # 9️⃣ Build Bonsai
+      # 8️⃣ Build BonsaiPR
       - name: Build BonsaiPR
         run: |
-          echo "Building BonsaiPR for ${{ matrix.os }}..."
           cd src/bonsai
           rm -rf build dist
           mkdir -p build dist
           cp -r bonsai build/bonsaiPR
-          if [[ "${{ matrix.os }}" != "windows-latest" ]]; then
-            cd build && python3 -m venv env && . env/bin/activate && pip install build
-            cd ..
-          fi
-          make dist PLATFORM=${{ matrix.os == 'ubuntu-latest' && 'linux' || matrix.os == 'macos-latest' && 'macos' || matrix.os == 'windows-latest' && 'windows' }} PYVERSION=py311 ADDON_NAME=bonsaiPR || true
+          cd build && python3 -m venv env && . env/bin/activate && pip install build
+          cd ..
+          make dist PLATFORM=${{ matrix.os }} PYVERSION=py311 ADDON_NAME=bonsaiPR || true
 
-      # 🔟 Find and rename zip with owner-based prefix
+      # 9️⃣ Find and rename zip with owner-based prefix
       - name: Find and rename zip
         id: find_zip
         run: |
@@ -126,7 +113,7 @@ jobs:
           echo "filepath=$newfile" >> $GITHUB_OUTPUT
           echo "filename=$(basename $newfile)" >> $GITHUB_OUTPUT
 
-      # 1️⃣1️⃣ Upload zip to GitHub release
+      # 🔟 Upload zip to GitHub release
       - name: Upload zip to release
         uses: svenstaro/upload-release-action@v2
         with:
