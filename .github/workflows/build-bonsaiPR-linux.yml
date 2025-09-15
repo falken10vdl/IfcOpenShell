@@ -101,10 +101,17 @@ jobs:
         run: |
           original=$(ls src/bonsai/dist/bonsai_*.zip)
           echo "Original zip: $original"
-          owners="${{ steps.merge_prs.outputs.pr_owners }}"
+          owners="falken10vdl"
           owners_clean=$(echo "$owners" | tr ' ' '_' | tr ',' '_')
-          newfile=$(echo "$original" | sed "s/bonsai/bonsaiPR_${owners_clean}/")
+
+          # Carpeta de destino
+          dest_dir=$(dirname "$original" | sed "s|bonsai|bonsaiPR_${owners_clean}|")
+          mkdir -p "$dest_dir"
+
+          # Nuevo archivo
+          newfile="$dest_dir/$(basename "$original")"
           cp "$original" "$newfile"
+
           echo "filepath=$newfile" >> $GITHUB_OUTPUT
           echo "filename=$(basename $newfile)" >> $GITHUB_OUTPUT
 
