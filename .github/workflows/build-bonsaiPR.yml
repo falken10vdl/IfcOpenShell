@@ -16,8 +16,17 @@ jobs:
       - name: Checkout tu repositorio
         uses: actions/checkout@v4
 
-      - name: Instala gh CLI
-        uses: cli/gh-action@v2
+      - name: Instala GitHub CLI
+        run: |
+          if [[ "$RUNNER_OS" == "Linux" ]]; then
+            sudo apt update && sudo apt install -y gh
+          elif [[ "$RUNNER_OS" == "macOS" ]]; then
+            brew install gh
+          elif [[ "$RUNNER_OS" == "Windows" ]]; then
+            choco install gh -y
+          fi
+          gh version
+        shell: bash
 
       - name: Configura Git
         run: |
