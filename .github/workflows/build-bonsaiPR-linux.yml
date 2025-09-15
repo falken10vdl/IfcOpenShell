@@ -4,6 +4,11 @@ on:
   schedule:
     - cron: '0 3 * * *'
   workflow_dispatch:
+    inputs:
+      alpha_version:
+        description: 'Optional alpha version prefix (e.g. bonsai-0.8.4-alpha250910)'
+        required: false
+        default: 'bonsai-0.8.4-alpha250910'
 
 jobs:
   build-linux:
@@ -27,10 +32,26 @@ jobs:
       - name: Authenticate GitHub CLI
         run: gh auth status || gh auth login --with-token <<< "${{ secrets.GITHUB_TOKEN }}"
 
+      # 🔹 Selección de la versión base alpha
+      - name: Determine base alpha version
+        id: version_select
+        run: |
+          PREFIX="${{ github.event.inputs.alpha_version }}"
+          echo "Selected alpha version prefix: $PREFIX"
+          git fetch --tags
+          VERSION=$(git tag --list "${PREFIX}*" | sort -V | tail -n1)
+          if [ -z "$VERSION" ]; then
+            echo "No matching tag found for prefix $PREFIX, using default VERSION file"
+            VERSION=$(cat VERSION)
+          fi
+          echo "selected_version=$VERSION" >> $GITHUB_OUTPUT
+          echo "version=$VERSION"
+
+      # 🔹 Merge PRs de owners permitidos (puede estar vacío)
       - name: Merge PRs from allowed owners
         id: merge_prs
         run: |
-          ALLOWED_OWNERS=""  # Puede estar vacío
+          ALLOWED_OWNERS=""  # Lista vacía = no merge de PRs
           git remote add upstream https://github.com/IfcOpenShell/IfcOpenShell.git
           git fetch upstream
           MAIN_BRANCH=$(git remote show origin | grep 'HEAD branch' | cut -d':' -f2 | tr -d ' ')
@@ -66,10 +87,6 @@ jobs:
         with:
           python-version: 3.11
 
-      - name: Get current version
-        id: version
-        run: echo "version=$(cat VERSION)" >> $GITHUB_OUTPUT
-
       - name: Get current date
         id: date
         run: echo "date=$(date +'%y%m%d%H%M')" >> $GITHUB_OUTPUT
@@ -98,8 +115,8 @@ jobs:
           repo_token: ${{ secrets.GITHUB_TOKEN }}
           file: ${{ steps.find_zip.outputs.zip_file }}
           asset_name: ${{ steps.find_zip.outputs.zip_name }}
-          release_name: "bonsaiPR-${{ steps.version.outputs.version }}-alpha${{ steps.date.outputs.date }} (unstable)"
-          tag: "bonsaiPR-${{ steps.version.outputs.version }}-alpha${{ steps.date.outputs.date }}"
+          release_name: "bonsaiPR-${{ steps.version_select.outputs.selected_version }} (unstable)"
+          tag: "bonsaiPR-${{ steps.version_select.outputs.selected_version }}"
           overwrite: true
           body: |
             Daily BonsaiPR build including all open PRs from: ${{ steps.merge_prs.outputs.pr_owners }}
