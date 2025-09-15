@@ -148,19 +148,19 @@ jobs:
             python << 'EOF'
 try:
     import ifcopenshell
-    print('✓ IfcOpenShell imports successfully')
-    print(f'  Version: {ifcopenshell.version}')
-    print(f'  File location: {ifcopenshell.__file__}')
+    print("✓ IfcOpenShell imports successfully")
+    print("  Version:", ifcopenshell.version)
+    print("  File location:", ifcopenshell.__file__)
     
     # Test basic functionality (without opening files)
     from ifcopenshell import entity_instance
-    print('✓ Basic IfcOpenShell classes accessible')
+    print("✓ Basic IfcOpenShell classes accessible")
     
 except ImportError as e:
-    print(f'✗ Failed to import IfcOpenShell: {e}')
+    print("✗ Failed to import IfcOpenShell:", str(e))
     exit(1)
 except Exception as e:
-    print(f'⚠ IfcOpenShell imported but with issues: {e}')
+    print("⚠ IfcOpenShell imported but with issues:", str(e))
 EOF
             
             deactivate
@@ -186,21 +186,21 @@ sys.path.insert(0, 'test_import')
 try:
     # Test if we can at least import the addon structure
     import bonsai
-    print('✓ Bonsai addon imports successfully')
+    print("✓ Bonsai addon imports successfully")
     
     # Check if bl_info exists
     if hasattr(bonsai, 'bl_info'):
-        print('✓ bl_info found in addon')
-        print(f'  Name: {bonsai.bl_info.get("name", "Unknown")}')
-        print(f'  Version: {bonsai.bl_info.get("version", "Unknown")}')
+        print("✓ bl_info found in addon")
+        print("  Name:", bonsai.bl_info.get("name", "Unknown"))
+        print("  Version:", bonsai.bl_info.get("version", "Unknown"))
     else:
-        print('⚠ bl_info not found - this might be expected for some addon structures')
+        print("⚠ bl_info not found - this might be expected for some addon structures")
 
 except ImportError as e:
-    print(f'⚠ Could not import bonsai addon: {e}')
-    print('This might be expected if the addon requires Blender context')
+    print("⚠ Could not import bonsai addon:", str(e))
+    print("This might be expected if the addon requires Blender context")
 except Exception as e:
-    print(f'⚠ Error during addon validation: {e}')
+    print("⚠ Error during addon validation:", str(e))
 EOF
 
       - name: Find zip file
