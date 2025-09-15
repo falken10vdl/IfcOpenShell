@@ -1,0 +1,54 @@
+name: bonsai_linux_PR
+
+on:
+  workflow_dispatch:
+    inputs:
+      alpha_date:
+        description: 'Date to base the alpha release on (format: yymmdd)'
+        required: false
+        default: '250910'
+
+jobs:
+  build-linux-py311:
+    runs-on: ubuntu-latest
+    name: Linux Build - py311
+
+    steps:
+      - uses: actions/checkout@v2
+
+      - name: Setup Python 3.11
+        uses: actions/setup-python@v2
+        with:
+          python-version: '3.11'
+          architecture: 'x64'
+
+      - name: Get current version
+        id: version
+        run: echo "version=$(cat VERSION)" >> $GITHUB_OUTPUT
+
+      - name: Get time suffix (hhmm)
+        id: time
+        run: echo "hhmm=$(date +'%H%M')" >> $GITHUB_OUTPUT
+
+      - name: Compile Bonsai (Linux, py311)
+        run: |
+          cd src/bonsai
+          make dist PLATFORM=linux PYVERSION=py311
+
+      - name: Find zip file
+        id: find_zip
+        run: |
+          filepath=$(ls src/bonsai/dist/bonsai_*.zip)
+          echo "filepath=$filepath" >> $GITHUB_OUTPUT
+          echo "filename=$(basename $filepath)" >> $GITHUB_OUTPUT
+
+      - name: Upload release
+        uses: svenstaro/upload-release-action@v2
+        with:
+          repo_token: ${{ secrets.GITHUB_TOKEN }}
+          file: ${{ steps.find_zip.outputs.filepath }}
+          asset_name: ${{ steps.find_zip.outputs.filename }}
+          release_name: "bonsai-${{ steps.version.outputs.version }}-alpha${{ github.event.inputs.alpha_date }}${{ steps.time.outputs.hhmm }} (unstable)"
+          tag: "bonsai-${{ steps.version.outputs.version }}-alpha${{ github.event.inputs.alpha_date }}${{ steps.time.outputs.hhmm }}"
+          overwrite: true
+          body: "Manual Bonsai build for Linux (py311) based on alpha date ${{ github.event.inputs.alpha_date }}."
