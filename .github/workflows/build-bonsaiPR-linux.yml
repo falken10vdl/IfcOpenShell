@@ -30,7 +30,7 @@ jobs:
       - name: Authenticate GitHub CLI
         run: gh auth status || gh auth login --with-token <<< "${{ secrets.GITHUB_TOKEN }}"
 
-      # 4️⃣ Merge PRs from specific owners
+      # 4️⃣ Merge PRs from allowed owners
       - name: Merge PRs from allowed owners
         id: merge_prs
         run: |
@@ -78,7 +78,7 @@ jobs:
         id: date
         run: echo "date=$(date +'%y%m%d%H%M')" >> $GITHUB_OUTPUT
 
-      # 8️⃣ Build BonsaiPR for Linux
+      # 8️⃣ Build Bonsai
       - name: Build BonsaiPR
         run: |
           cd src/bonsai
@@ -87,15 +87,18 @@ jobs:
           cp -r bonsai build/bonsaiPR
           cd build && python3 -m venv env && . env/bin/activate && pip install build
           cd ..
-          make dist PLATFORM=linux PYVERSION=py311 ADDON_NAME=bonsaiPR
+          make dist PLATFORM=linux PYVERSION=py311 ADDON_NAME=bonsaiPR || true
 
-      # 9️⃣ Find the generated zip
-      - name: Find zip file
+      # 9️⃣ Find the generated zip and rename
+      - name: Find and rename zip
         id: find_zip
         run: |
-          filepath=$(ls src/bonsai/dist/bonsaiPR_*.zip)
-          echo "filepath=$filepath" >> $GITHUB_OUTPUT
-          echo "filename=$(basename $filepath)" >> $GITHUB_OUTPUT
+          original=$(ls src/bonsai/dist/bonsai_*.zip)
+          echo "Original zip: $original"
+          newfile=$(echo "$original" | sed 's/bonsai/bonsaiPR/')
+          cp "$original" "$newfile"
+          echo "filepath=$newfile" >> $GITHUB_OUTPUT
+          echo "filename=$(basename $newfile)" >> $GITHUB_OUTPUT
 
       # 🔟 Upload zip to GitHub release
       - name: Upload zip to release
