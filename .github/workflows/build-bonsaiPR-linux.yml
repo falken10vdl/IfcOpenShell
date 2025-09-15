@@ -30,25 +30,29 @@ jobs:
       - name: Authenticate GitHub CLI
         run: gh auth status || gh auth login --with-token <<< "${{ secrets.GITHUB_TOKEN }}"
 
-      # 4️⃣ Merge all open PRs from upstream and store merged PR numbers
-      - name: Merge all open PRs from upstream
+      # 4️⃣ Merge PRs from specific owners
+      - name: Merge PRs from allowed owners
         id: merge_prs
         run: |
+          ALLOWED_OWNERS="falken10vdl"
           git remote add upstream https://github.com/IfcOpenShell/IfcOpenShell.git
           git fetch upstream
           MAIN_BRANCH=$(git remote show origin | grep 'HEAD branch' | cut -d':' -f2 | tr -d ' ')
           git checkout $MAIN_BRANCH
           merged_prs=""
-          gh pr list --repo IfcOpenShell/IfcOpenShell --state open --json number --jq '.[].number' | while read pr; do
-            echo "Merging PR #$pr"
-            git fetch upstream pull/$pr/head:pr-$pr
-            if git merge --no-ff --no-edit pr-$pr; then
-              merged_prs="$merged_prs #$pr"
-            else
-              echo "Conflict in PR #$pr, skipping"
-            fi
+          for owner in $ALLOWED_OWNERS; do
+            gh pr list --repo IfcOpenShell/IfcOpenShell --state open --author $owner --json number --jq '.[].number' | while read pr; do
+              echo "Merging PR #$pr from $owner"
+              git fetch upstream pull/$pr/head:pr-$pr
+              if git merge --no-ff --no-edit pr-$pr; then
+                merged_prs="$merged_prs #$pr"
+              else
+                echo "Conflict in PR #$pr, skipping"
+              fi
+            done
           done
           echo "merged_prs=$merged_prs" >> $GITHUB_OUTPUT
+          echo "pr_owners=$ALLOWED_OWNERS" >> $GITHUB_OUTPUT
 
       # 5️⃣ Install Linux build dependencies
       - name: Install build dependencies
@@ -104,5 +108,5 @@ jobs:
           tag: "bonsaiPR-${{steps.version.outputs.version}}-alpha${{steps.date.outputs.date}}"
           overwrite: true
           body: |
-            Daily BonsaiPR build including all open PRs from IfcOpenShell/IfcOpenShell.
+            Daily BonsaiPR build including all open PRs from: ${{ steps.merge_prs.outputs.pr_owners }}
             Merged PRs: ${{ steps.merge_prs.outputs.merged_prs }}
