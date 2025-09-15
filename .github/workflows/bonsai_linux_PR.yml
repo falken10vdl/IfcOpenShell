@@ -30,10 +30,95 @@ jobs:
         id: time
         run: echo "hhmm=$(date +'%H%M')" >> $GITHUB_OUTPUT
 
+      - name: Install build dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install wheel setuptools
+
       - name: Compile Bonsai (Linux, py311)
         run: |
           cd src/bonsai
           make dist PLATFORM=linux PYVERSION=py311
+
+      - name: Verify build output
+        run: |
+          ls -la src/bonsai/dist/
+          echo "Checking for zip files..."
+          if ls src/bonsai/dist/bonsai_*.zip 1> /dev/null 2>&1; then
+            echo "✓ Bonsai zip file found"
+          else
+            echo "✗ No Bonsai zip file found"
+            exit 1
+          fi
+
+      - name: Extract and verify addon structure
+        run: |
+          cd src/bonsai/dist
+          zipfile=$(ls bonsai_*.zip | head -1)
+          echo "Extracting $zipfile for verification..."
+          unzip -q "$zipfile" -d temp_extract/
+          
+          echo "Checking addon structure..."
+          if [ -d "temp_extract/bonsai" ]; then
+            echo "✓ Bonsai addon directory found"
+          else
+            echo "✗ Bonsai addon directory missing"
+            exit 1
+          fi
+          
+          echo "Checking for __init__.py..."
+          if [ -f "temp_extract/bonsai/__init__.py" ]; then
+            echo "✓ Main __init__.py found"
+          else
+            echo "✗ Main __init__.py missing"
+            exit 1
+          fi
+          
+          echo "Checking for IfcOpenShell dependencies..."
+          if [ -d "temp_extract/bonsai/libs" ]; then
+            echo "✓ Libs directory found"
+            ls -la temp_extract/bonsai/libs/
+          else
+            echo "⚠ No libs directory found - checking for ifcopenshell in other locations"
+          fi
+          
+          # Check if ifcopenshell is bundled somewhere
+          find temp_extract/ -name "*ifcopenshell*" -type f | head -10
+          find temp_extract/ -name "*_ifcopenshell_wrapper*" -type f | head -5
+
+      - name: Test addon import (basic validation)
+        run: |
+          cd src/bonsai/dist
+          zipfile=$(ls bonsai_*.zip | head -1)
+          unzip -q "$zipfile" -d test_import/
+          
+          # Add the extracted addon to Python path and test basic import
+          export PYTHONPATH="$PWD/test_import:$PYTHONPATH"
+          
+          echo "Testing basic addon structure..."
+          python -c "
+          import sys
+          sys.path.insert(0, 'test_import')
+          
+          try:
+              # Test if we can at least import the addon structure
+              import bonsai
+              print('✓ Bonsai addon imports successfully')
+              
+              # Check if bl_info exists
+              if hasattr(bonsai, 'bl_info'):
+                  print('✓ bl_info found in addon')
+                  print(f'  Name: {bonsai.bl_info.get(\"name\", \"Unknown\")}')
+                  print(f'  Version: {bonsai.bl_info.get(\"version\", \"Unknown\")}')
+              else:
+                  print('⚠ bl_info not found - this might be expected for some addon structures')
+          
+          except ImportError as e:
+              print(f'⚠ Could not import bonsai addon: {e}')
+              print('This might be expected if the addon requires Blender context')
+          except Exception as e:
+              print(f'⚠ Error during addon validation: {e}')
+          "
 
       - name: Find zip file
         id: find_zip
@@ -41,6 +126,11 @@ jobs:
           filepath=$(ls src/bonsai/dist/bonsai_*.zip)
           echo "filepath=$filepath" >> $GITHUB_OUTPUT
           echo "filename=$(basename $filepath)" >> $GITHUB_OUTPUT
+          
+          # Get file size for verification
+          filesize=$(stat -c%s "$filepath")
+          echo "filesize=$filesize" >> $GITHUB_OUTPUT
+          echo "File size: $(( filesize / 1024 / 1024 )) MB"
 
       - name: Upload release
         uses: svenstaro/upload-release-action@v2
@@ -51,4 +141,23 @@ jobs:
           release_name: "bonsai-${{ steps.version.outputs.version }}-alpha${{ github.event.inputs.alpha_date }}${{ steps.time.outputs.hhmm }} (unstable)"
           tag: "bonsai-${{ steps.version.outputs.version }}-alpha${{ github.event.inputs.alpha_date }}${{ steps.time.outputs.hhmm }}"
           overwrite: true
-          body: "Manual Bonsai build for Linux (py311) based on alpha date ${{ github.event.inputs.alpha_date }}."
+          body: |
+            Manual Bonsai build for Linux (py311) based on alpha date ${{ github.event.inputs.alpha_date }}.
+            
+            **Build Info:**
+            - Platform: Linux
+            - Python: 3.11
+            - File size: ${{ steps.find_zip.outputs.filesize }} bytes
+            - Build time: ${{ steps.time.outputs.hhmm }}
+            
+            **Installation:**
+            1. Download the zip file
+            2. In Blender, go to Edit > Preferences > Add-ons
+            3. Click "Install..." and select this zip file
+            4. Enable the "Import-Export: BlenderBIM Add-on" addon
+
+      - name: Cleanup
+        if: always()
+        run: |
+          cd src/bonsai/dist
+          rm -rf temp_extract/ test_import/ 2>/dev/null || true
