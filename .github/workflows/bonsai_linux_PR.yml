@@ -1,24 +1,10 @@
 name: bonsai_linux_PR
 
 on:
-  push:
-    paths:
-      - '.github/workflows/bonsai_linux_PR.yml'
-      - 'src/bonsai/**'
-    branches:
-      - v0.8.0
   workflow_dispatch:
 
 jobs:
-  activate:
-    runs-on: ubuntu-latest
-    if: github.repository == 'IfcOpenShell/IfcOpenShell'
-    steps:
-      - name: Set env
-        run: echo "Activation OK"
-
   build-linux-py311:
-    needs: activate
     runs-on: ubuntu-latest
     name: Linux Build - py311
 
@@ -60,4 +46,4 @@ jobs:
           release_name: "bonsai-${{ steps.version.outputs.version }}-alpha${{ steps.date.outputs.date }} (unstable)"
           tag: "bonsai-${{ steps.version.outputs.version }}-alpha${{ steps.date.outputs.date }}"
           overwrite: true
-          body: "Daily Bonsai build for Linux (py311)."
+          body: "Manual Bonsai build for Linux (py311)."
