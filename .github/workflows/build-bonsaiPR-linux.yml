@@ -2,7 +2,7 @@ name: Build BonsaiPR Addon (Linux)
 
 on:
   schedule:
-    - cron: '0 3 * * *'  # Every day at 03:00 UTC
+    - cron: '0 3 * * *'  # Daily at 03:00 UTC
   workflow_dispatch:
 
 jobs:
@@ -30,7 +30,7 @@ jobs:
       - name: Authenticate GitHub CLI
         run: gh auth status || gh auth login --with-token <<< "${{ secrets.GITHUB_TOKEN }}"
 
-      # 4️⃣ Add upstream and merge open PRs
+      # 4️⃣ Merge all open PRs from upstream
       - name: Merge all open PRs from upstream
         run: |
           git remote add upstream https://github.com/IfcOpenShell/IfcOpenShell.git
@@ -43,17 +43,23 @@ jobs:
             git merge --no-ff --no-edit pr-$pr || echo "Conflict in PR #$pr, skipping"
           done
 
-      # 5️⃣ Install build dependencies for Linux
+      # 5️⃣ Install Linux build dependencies
       - name: Install build dependencies
         run: |
           sudo apt update
-          sudo apt install -y gcc g++ git make zip python3 python3-pip libffi-dev \
-                              libgl1-mesa-dev libsqlite3-dev zlib1g-dev libbz2-dev \
-                              libssl-dev libreadline-dev libncurses-dev xz-utils
+          sudo apt install -y gcc g++ git make zip libffi-dev \
+                              libgl1-mesa-dev libsqlite3-dev zlib1g-dev \
+                              libbz2-dev libssl-dev libreadline-dev libncurses-dev xz-utils
           python3 -m pip install --upgrade pip
           python3 -m pip install typing_extensions
 
-      # 6️⃣ Get version and date for release tag
+      # 6️⃣ Setup Python 3.11
+      - name: Setup Python 3.11
+        uses: actions/setup-python@v4
+        with:
+          python-version: 3.11
+
+      # 7️⃣ Get version and date for release tag
       - name: Get current version
         id: version
         run: echo "version=$(cat VERSION)" >> $GITHUB_OUTPUT
@@ -61,13 +67,13 @@ jobs:
         id: date
         run: echo "date=$(date +'%y%m%d%H%M')" >> $GITHUB_OUTPUT
 
-      # 7️⃣ Build Bonsai for Linux using Makefile
+      # 8️⃣ Build Bonsai for Linux
       - name: Build Bonsai
         run: |
           cd src/bonsai
           make dist PLATFORM=linux PYVERSION=py311
 
-      # 8️⃣ Find the generated zip
+      # 9️⃣ Find the generated zip
       - name: Find zip file
         id: find_zip
         run: |
@@ -75,7 +81,7 @@ jobs:
           echo "filepath=$filepath" >> $GITHUB_OUTPUT
           echo "filename=$(basename $filepath)" >> $GITHUB_OUTPUT
 
-      # 9️⃣ Upload zip to GitHub release
+      # 🔟 Upload zip to GitHub release
       - name: Upload zip to release
         uses: svenstaro/upload-release-action@v2
         with:
