@@ -121,17 +121,17 @@ jobs:
             
             # Check wheel compatibility tags
             echo "Wheel compatibility details:"
-            python -c "
-            import sys
-            wheel_name = '$wheel_name'
-            parts = wheel_name.replace('.whl', '').split('-')
-            if len(parts) >= 5:
-                print(f'  Package: {parts[0]}')
-                print(f'  Version: {parts[1]}')
-                print(f'  Python: {parts[2]}')
-                print(f'  ABI: {parts[3]}')
-                print(f'  Platform: {parts[4]}')
-            "
+            python3 -c "
+import sys
+wheel_name = '$wheel_name'
+parts = wheel_name.replace('.whl', '').split('-')
+if len(parts) >= 5:
+    print(f'  Package: {parts[0]}')
+    print(f'  Version: {parts[1]}')
+    print(f'  Python: {parts[2]}')
+    print(f'  ABI: {parts[3]}')
+    print(f'  Platform: {parts[4]}')
+"
           fi
 
       - name: Test IfcOpenShell wheel installation
@@ -149,22 +149,22 @@ jobs:
             
             # Test basic import
             python -c "
-            try:
-                import ifcopenshell
-                print('✓ IfcOpenShell imports successfully')
-                print(f'  Version: {ifcopenshell.version}')
-                print(f'  File location: {ifcopenshell.__file__}')
-                
-                # Test basic functionality (without opening files)
-                from ifcopenshell import entity_instance
-                print('✓ Basic IfcOpenShell classes accessible')
-                
-            except ImportError as e:
-                print(f'✗ Failed to import IfcOpenShell: {e}')
-                exit(1)
-            except Exception as e:
-                print(f'⚠ IfcOpenShell imported but with issues: {e}')
-            "
+try:
+    import ifcopenshell
+    print('✓ IfcOpenShell imports successfully')
+    print(f'  Version: {ifcopenshell.version}')
+    print(f'  File location: {ifcopenshell.__file__}')
+    
+    # Test basic functionality (without opening files)
+    from ifcopenshell import entity_instance
+    print('✓ Basic IfcOpenShell classes accessible')
+    
+except ImportError as e:
+    print(f'✗ Failed to import IfcOpenShell: {e}')
+    exit(1)
+except Exception as e:
+    print(f'⚠ IfcOpenShell imported but with issues: {e}')
+"
             
             deactivate
             rm -rf test_env
@@ -183,28 +183,28 @@ jobs:
           
           echo "Testing basic addon structure..."
           python -c "
-          import sys
-          sys.path.insert(0, 'test_import')
-          
-          try:
-              # Test if we can at least import the addon structure
-              import bonsai
-              print('✓ Bonsai addon imports successfully')
-              
-              # Check if bl_info exists
-              if hasattr(bonsai, 'bl_info'):
-                  print('✓ bl_info found in addon')
-                  print(f'  Name: {bonsai.bl_info.get(\"name\", \"Unknown\")}')
-                  print(f'  Version: {bonsai.bl_info.get(\"version\", \"Unknown\")}')
-              else:
-                  print('⚠ bl_info not found - this might be expected for some addon structures')
-          
-          except ImportError as e:
-              print(f'⚠ Could not import bonsai addon: {e}')
-              print('This might be expected if the addon requires Blender context')
-          except Exception as e:
-              print(f'⚠ Error during addon validation: {e}')
-          "
+import sys
+sys.path.insert(0, 'test_import')
+
+try:
+    # Test if we can at least import the addon structure
+    import bonsai
+    print('✓ Bonsai addon imports successfully')
+    
+    # Check if bl_info exists
+    if hasattr(bonsai, 'bl_info'):
+        print('✓ bl_info found in addon')
+        print(f'  Name: {bonsai.bl_info.get(\"name\", \"Unknown\")}')
+        print(f'  Version: {bonsai.bl_info.get(\"version\", \"Unknown\")}')
+    else:
+        print('⚠ bl_info not found - this might be expected for some addon structures')
+
+except ImportError as e:
+    print(f'⚠ Could not import bonsai addon: {e}')
+    print('This might be expected if the addon requires Blender context')
+except Exception as e:
+    print(f'⚠ Error during addon validation: {e}')
+"
 
       - name: Find zip file
         id: find_zip
