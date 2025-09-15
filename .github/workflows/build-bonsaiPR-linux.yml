@@ -4,9 +4,15 @@ on:
   schedule:
     - cron: '0 3 * * *'  # Daily at 03:00 UTC
   workflow_dispatch:
+    inputs:
+      platforms:
+        description: 'Platforms to build (comma-separated, e.g., linux,windows,macos)'
+        required: true
+        default: linux
 
 jobs:
   build-linux:
+    if: contains(github.event.inputs.platforms, 'linux')
     runs-on: ubuntu-latest
 
     steps:
@@ -89,13 +95,20 @@ jobs:
           cd ..
           make dist PLATFORM=linux PYVERSION=py311 ADDON_NAME=bonsaiPR || true
 
-      # 9️⃣ Upload zip to GitHub release
+      # 9️⃣ Find the ZIP file
+      - name: Find ZIP file
+        id: find_zip
+        run: |
+          FILE=$(ls src/bonsai/dist/bonsai_*.zip)
+          echo "zip_file=$FILE" >> $GITHUB_OUTPUT
+
+      # 🔟 Upload zip to GitHub release
       - name: Upload zip to release
         uses: svenstaro/upload-release-action@v2
         with:
           repo_token: ${{ secrets.GITHUB_TOKEN }}
-          file: src/bonsai/dist/bonsai_*.zip
-          asset_name: bonsai_*.zip
+          file: ${{ steps.find_zip.outputs.zip_file }}
+          asset_name: ${{ steps.find_zip.outputs.zip_file | basename }}
           release_name: "bonsaiPR-${{steps.version.outputs.version}}-alpha${{steps.date.outputs.date}} (unstable)"
           tag: "bonsaiPR-${{steps.version.outputs.version}}-alpha${{steps.date.outputs.date}}"
           overwrite: true
