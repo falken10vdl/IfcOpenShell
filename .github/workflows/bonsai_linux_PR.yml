@@ -144,8 +144,8 @@ jobs:
             # Install the wheel
             pip install "$wheel_file"
             
-            # Test basic import
-            python << 'EOF'
+            # Create test script
+            cat > test_ifcopenshell.py << 'PYTHON_SCRIPT'
 try:
     import ifcopenshell
     print("✓ IfcOpenShell imports successfully")
@@ -161,10 +161,13 @@ except ImportError as e:
     exit(1)
 except Exception as e:
     print("⚠ IfcOpenShell imported but with issues:", str(e))
-EOF
+PYTHON_SCRIPT
+            
+            # Run the test
+            python test_ifcopenshell.py
             
             deactivate
-            rm -rf test_env
+            rm -rf test_env test_ifcopenshell.py
           else
             echo "⚠ No IfcOpenShell wheel found for testing"
           fi
@@ -179,7 +182,9 @@ EOF
           export PYTHONPATH="$PWD/test_import:$PYTHONPATH"
           
           echo "Testing basic addon structure..."
-          python << 'EOF'
+          
+          # Create test script
+          cat > test_bonsai.py << 'PYTHON_SCRIPT'
 import sys
 sys.path.insert(0, 'test_import')
 
@@ -201,7 +206,11 @@ except ImportError as e:
     print("This might be expected if the addon requires Blender context")
 except Exception as e:
     print("⚠ Error during addon validation:", str(e))
-EOF
+PYTHON_SCRIPT
+          
+          # Run the test
+          python test_bonsai.py
+          rm test_bonsai.py
 
       - name: Find zip file
         id: find_zip
