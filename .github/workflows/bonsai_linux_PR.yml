@@ -144,24 +144,20 @@ jobs:
             # Install the wheel
             pip install "$wheel_file"
             
-            # Create test script
-            cat > test_ifcopenshell.py << 'PYTHON_SCRIPT'
-try:
-    import ifcopenshell
-    print("✓ IfcOpenShell imports successfully")
-    print("  Version:", ifcopenshell.version)
-    print("  File location:", ifcopenshell.__file__)
-    
-    # Test basic functionality (without opening files)
-    from ifcopenshell import entity_instance
-    print("✓ Basic IfcOpenShell classes accessible")
-    
-except ImportError as e:
-    print("✗ Failed to import IfcOpenShell:", str(e))
-    exit(1)
-except Exception as e:
-    print("⚠ IfcOpenShell imported but with issues:", str(e))
-PYTHON_SCRIPT
+            # Create test script using echo
+            echo 'try:' > test_ifcopenshell.py
+            echo '    import ifcopenshell' >> test_ifcopenshell.py
+            echo '    print("✓ IfcOpenShell imports successfully")' >> test_ifcopenshell.py
+            echo '    print("  Version:", ifcopenshell.version)' >> test_ifcopenshell.py
+            echo '    print("  File location:", ifcopenshell.__file__)' >> test_ifcopenshell.py
+            echo '    # Test basic functionality (without opening files)' >> test_ifcopenshell.py
+            echo '    from ifcopenshell import entity_instance' >> test_ifcopenshell.py
+            echo '    print("✓ Basic IfcOpenShell classes accessible")' >> test_ifcopenshell.py
+            echo 'except ImportError as e:' >> test_ifcopenshell.py
+            echo '    print("✗ Failed to import IfcOpenShell:", str(e))' >> test_ifcopenshell.py
+            echo '    exit(1)' >> test_ifcopenshell.py
+            echo 'except Exception as e:' >> test_ifcopenshell.py
+            echo '    print("⚠ IfcOpenShell imported but with issues:", str(e))' >> test_ifcopenshell.py
             
             # Run the test
             python test_ifcopenshell.py
@@ -183,30 +179,28 @@ PYTHON_SCRIPT
           
           echo "Testing basic addon structure..."
           
-          # Create test script
-          cat > test_bonsai.py << 'PYTHON_SCRIPT'
-import sys
-sys.path.insert(0, 'test_import')
-
-try:
-    # Test if we can at least import the addon structure
-    import bonsai
-    print("✓ Bonsai addon imports successfully")
-    
-    # Check if bl_info exists
-    if hasattr(bonsai, 'bl_info'):
-        print("✓ bl_info found in addon")
-        print("  Name:", bonsai.bl_info.get("name", "Unknown"))
-        print("  Version:", bonsai.bl_info.get("version", "Unknown"))
-    else:
-        print("⚠ bl_info not found - this might be expected for some addon structures")
-
-except ImportError as e:
-    print("⚠ Could not import bonsai addon:", str(e))
-    print("This might be expected if the addon requires Blender context")
-except Exception as e:
-    print("⚠ Error during addon validation:", str(e))
-PYTHON_SCRIPT
+          # Create test script using echo
+          echo 'import sys' > test_bonsai.py
+          echo 'sys.path.insert(0, "test_import")' >> test_bonsai.py
+          echo '' >> test_bonsai.py
+          echo 'try:' >> test_bonsai.py
+          echo '    # Test if we can at least import the addon structure' >> test_bonsai.py
+          echo '    import bonsai' >> test_bonsai.py
+          echo '    print("✓ Bonsai addon imports successfully")' >> test_bonsai.py
+          echo '    ' >> test_bonsai.py
+          echo '    # Check if bl_info exists' >> test_bonsai.py
+          echo '    if hasattr(bonsai, "bl_info"):' >> test_bonsai.py
+          echo '        print("✓ bl_info found in addon")' >> test_bonsai.py
+          echo '        print("  Name:", bonsai.bl_info.get("name", "Unknown"))' >> test_bonsai.py
+          echo '        print("  Version:", bonsai.bl_info.get("version", "Unknown"))' >> test_bonsai.py
+          echo '    else:' >> test_bonsai.py
+          echo '        print("⚠ bl_info not found - this might be expected for some addon structures")' >> test_bonsai.py
+          echo '' >> test_bonsai.py
+          echo 'except ImportError as e:' >> test_bonsai.py
+          echo '    print("⚠ Could not import bonsai addon:", str(e))' >> test_bonsai.py
+          echo '    print("This might be expected if the addon requires Blender context")' >> test_bonsai.py
+          echo 'except Exception as e:' >> test_bonsai.py
+          echo '    print("⚠ Error during addon validation:", str(e))' >> test_bonsai.py
           
           # Run the test
           python test_bonsai.py
