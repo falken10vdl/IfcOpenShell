@@ -89,13 +89,15 @@ jobs:
           cd ..
           make dist PLATFORM=linux PYVERSION=py311 ADDON_NAME=bonsaiPR || true
 
-      # 9️⃣ Find the generated zip and rename
+      # 9️⃣ Find and rename zip with owner-based prefix
       - name: Find and rename zip
         id: find_zip
         run: |
           original=$(ls src/bonsai/dist/bonsai_*.zip)
           echo "Original zip: $original"
-          newfile=$(echo "$original" | sed 's/bonsai/bonsaiPR/')
+          owners="${{ steps.merge_prs.outputs.pr_owners }}"
+          owners_clean=$(echo "$owners" | tr ' ' '_' | tr ',' '_')
+          newfile=$(echo "$original" | sed "s/bonsai/bonsaiPR_${owners_clean}/")
           cp "$original" "$newfile"
           echo "filepath=$newfile" >> $GITHUB_OUTPUT
           echo "filename=$(basename $newfile)" >> $GITHUB_OUTPUT
