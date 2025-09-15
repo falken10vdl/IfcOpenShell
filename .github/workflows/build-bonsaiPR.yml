@@ -1,0 +1,72 @@
+name: Build BonsaiPR Addon
+
+on:
+  schedule:
+    - cron: '0 3 * * *'  # Todos los días a las 03:00 UTC
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+
+    steps:
+      - name: Checkout tu repositorio
+        uses: actions/checkout@v4
+
+      - name: Instala gh CLI
+        uses: cli/gh-action@v2
+
+      - name: Configura Git
+        run: |
+          git config --global user.name "github-actions"
+          git config --global user.email "actions@github.com"
+
+      - name: Agrega upstream del repo oficial
+        run: |
+          git remote add upstream https://github.com/IfcOpenShell/IfcOpenShell.git
+          git fetch upstream
+          git merge upstream/main --no-edit || true
+
+      - name: Instala Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+
+      - name: Autenticarse en GH CLI
+        run: |
+          gh auth status || gh auth login --with-token <<< "${{ secrets.GITHUB_TOKEN }}"
+
+      - name: Hacer merge de todos los PRs abiertos
+        run: |
+          gh pr list --repo IfcOpenShell/IfcOpenShell --state open --json number --jq '.[].number' | while read pr; do
+            echo "Haciendo merge del PR #$pr"
+            gh pr checkout $pr --repo IfcOpenShell/IfcOpenShell
+            git merge --no-edit "pull/$pr/head" || true
+            git checkout main
+          done
+
+      - name: Empaquetar addon Bonsai como .zip
+        run: |
+          mkdir -p build/bonsai
+          cp -r src/bonsai/bonsai/* build/bonsai/
+          cd build
+          zip -r bonsai-${{ matrix.os }}.zip bonsai
+
+      - name: Subir artefacto
+        uses: actions/upload-artifact@v4
+        with:
+          name: bonsai-${{ matrix.os }}
+          path: build/bonsai-${{ matrix.os }}.zip
+
+      - name: Publicar como Release
+        if: matrix.os == 'ubuntu-latest'
+        uses: softprops/action-gh-release@v1
+        with:
+          tag_name: daily-bonsai-build
+          name: "Daily Bonsai Build"
+          files: build/bonsai-${{ matrix.os }}.zip
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
