@@ -89,7 +89,6 @@ jobs:
           cd ..
           make dist PLATFORM=linux PYVERSION=py311 ADDON_NAME=bonsaiPR || true
 
-
       # 9️⃣ Find the ZIP file
       - name: Find ZIP file
         id: find_zip
