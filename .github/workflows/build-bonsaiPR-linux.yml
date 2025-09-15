@@ -3,62 +3,80 @@ name: Build BonsaiPR Addon (Linux)
 on:
   schedule:
     - cron: '0 3 * * *'  # Todos los días a las 03:00 UTC
-  workflow_dispatch:     # Permite ejecución manual
+  workflow_dispatch:
 
 jobs:
   build-linux:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04
 
     steps:
-      - name: Checkout tu repositorio
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 0  # Necesario para merge de PRs
+      # 1. Instalar dependencias de compilación
+      - name: Install Dependencies
+        run: |
+          sudo apt update
+          sudo apt install -y gcc g++ git autoconf automake bison make zip cmake \
+                              python3 python3-pip libffi-dev libgl1-mesa-dev \
+                              libsqlite3-dev zlib1g-dev libbz2-dev libssl-dev \
+                              libreadline-dev libncurses-dev xz-utils
+          python3 -m pip install --upgrade pip
+          python3 -m pip install typing_extensions
 
+      # 2. Configurar Git
       - name: Configura Git
         run: |
           git config --global user.name "github-actions"
           git config --global user.email "actions@github.com"
 
-      - name: Agrega upstream del repo oficial
+      # 3. Clonar tu fork
+      - name: Checkout tu repositorio
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          submodules: recursive
+
+      # 4. Agregar upstream y actualizar
+      - name: Agrega upstream y merge PRs
         run: |
           git remote add upstream https://github.com/IfcOpenShell/IfcOpenShell.git
           git fetch upstream
-
-      - name: Detectar rama principal
-        id: main_branch
-        run: |
           MAIN_BRANCH=$(git remote show origin | grep 'HEAD branch' | cut -d':' -f2 | tr -d ' ')
-          echo "Rama principal detectada: $MAIN_BRANCH"
-          echo "MAIN_BRANCH=$MAIN_BRANCH" >> $GITHUB_ENV
-
-      - name: Checkout rama principal
-        run: git checkout $MAIN_BRANCH
-
-      - name: Instala GitHub CLI
-        run: |
-          sudo apt update && sudo apt install -y gh
-          gh version
-
-      - name: Autenticarse en GH CLI
-        run: gh auth status || gh auth login --with-token <<< "${{ secrets.GITHUB_TOKEN }}"
-
-      - name: Merge de todos los PRs abiertos
-        run: |
+          git checkout $MAIN_BRANCH
+          # Merge de todos los PRs abiertos
           gh pr list --repo IfcOpenShell/IfcOpenShell --state open --json number --jq '.[].number' | while read pr; do
             echo "Mergeando PR #$pr"
             git fetch upstream pull/$pr/head:pr-$pr
             git merge --no-ff --no-edit pr-$pr || echo "Conflicto en PR #$pr, se ignorará"
           done
 
-      - name: Empaquetar addon Bonsai como .zip
+      # 5. Instalar GitHub CLI
+      - name: Instala GitHub CLI
+        run: |
+          sudo apt install -y gh
+          gh version
+
+      # 6. Autenticarse en GH CLI
+      - name: Autenticarse en GH CLI
+        run: gh auth status || gh auth login --with-token <<< "${{ secrets.GITHUB_TOKEN }}"
+
+      # 7. Construir Bonsai/IfcOpenShell
+      - name: Run Build Script
+        run: |
+          CXXFLAGS="-O3" CFLAGS="-O3" ADD_COMMIT_SHA=1 BUILD_CFG=Release \
+          python3 ./nix/build-all.py --diskcleanup
+
+      # 8. Empaquetar addon Bonsai
+      - name: Package Bonsai Addon
         run: |
           mkdir -p build/bonsai
           cp -r src/bonsai/bonsai/* build/bonsai/
+          # Copiar binarios generados para Linux si existen
+          BIN_PATH=$(find ./build -type d -name 'ifcopenshell' | head -n1)
+          [ -n "$BIN_PATH" ] && cp -r $BIN_PATH/* build/bonsai/ || true
           cd build
           zip -r bonsai-linux.zip bonsai
 
-      - name: Crear Release y subir addon
+      # 9. Crear Release con el zip
+      - name: Create GitHub Release
         uses: softprops/action-gh-release@v1
         with:
           tag_name: daily-bonsai-build
