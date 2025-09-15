@@ -2,7 +2,7 @@ name: Build BonsaiPR Addon (Linux)
 
 on:
   schedule:
-    - cron: '0 3 * * *'  # Daily at 03:00 UTC
+    - cron: '0 3 * * *'
   workflow_dispatch:
 
 jobs:
@@ -10,51 +10,48 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      # 1️⃣ Checkout your fork
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
           submodules: recursive
 
-      # 2️⃣ Configure Git
       - name: Configure Git
         run: |
           git config --global user.name "github-actions"
           git config --global user.email "actions@github.com"
 
-      # 3️⃣ Install GitHub CLI
       - name: Install GitHub CLI
         run: sudo apt install -y gh
 
       - name: Authenticate GitHub CLI
         run: gh auth status || gh auth login --with-token <<< "${{ secrets.GITHUB_TOKEN }}"
 
-      # 4️⃣ Merge PRs from allowed owners
       - name: Merge PRs from allowed owners
         id: merge_prs
         run: |
-          ALLOWED_OWNERS=""
+          ALLOWED_OWNERS=""  # Puede estar vacío
           git remote add upstream https://github.com/IfcOpenShell/IfcOpenShell.git
           git fetch upstream
           MAIN_BRANCH=$(git remote show origin | grep 'HEAD branch' | cut -d':' -f2 | tr -d ' ')
           git checkout $MAIN_BRANCH
           merged_prs=""
-          for owner in $ALLOWED_OWNERS; do
-            gh pr list --repo IfcOpenShell/IfcOpenShell --state open --author $owner --json number --jq '.[].number' | while read pr; do
-              echo "Merging PR #$pr from $owner"
-              git fetch upstream pull/$pr/head:pr-$pr
-              if git merge --no-ff --no-edit pr-$pr; then
-                merged_prs="$merged_prs #$pr"
-              else
-                echo "Conflict in PR #$pr, skipping"
-              fi
+          if [ -n "$ALLOWED_OWNERS" ]; then
+            for owner in $ALLOWED_OWNERS; do
+              gh pr list --repo IfcOpenShell/IfcOpenShell --state open --author $owner --json number --jq '.[].number' | while read pr; do
+                echo "Merging PR #$pr from $owner"
+                git fetch upstream pull/$pr/head:pr-$pr
+                if git merge --no-ff --no-edit pr-$pr; then
+                  merged_prs="$merged_prs #$pr"
+                else
+                  echo "Conflict in PR #$pr, skipping"
+                fi
+              done
             done
-          done
+          fi
           echo "merged_prs=$merged_prs" >> $GITHUB_OUTPUT
           echo "pr_owners=$ALLOWED_OWNERS" >> $GITHUB_OUTPUT
 
-      # 5️⃣ Install Linux build dependencies
       - name: Install build dependencies
         run: |
           sudo apt update
@@ -64,21 +61,19 @@ jobs:
           python3 -m pip install --upgrade pip
           python3 -m pip install typing_extensions
 
-      # 6️⃣ Setup Python 3.11
       - name: Setup Python 3.11
         uses: actions/setup-python@v4
         with:
           python-version: 3.11
 
-      # 7️⃣ Get version and date for release tag
       - name: Get current version
         id: version
         run: echo "version=$(cat VERSION)" >> $GITHUB_OUTPUT
+
       - name: Get current date
         id: date
         run: echo "date=$(date +'%y%m%d%H%M')" >> $GITHUB_OUTPUT
 
-      # 8️⃣ Build Bonsai
       - name: Build BonsaiPR
         run: |
           cd src/bonsai
@@ -89,24 +84,23 @@ jobs:
           cd ..
           make dist PLATFORM=linux PYVERSION=py311 ADDON_NAME=bonsaiPR || true
 
-      # 9️⃣ Find the ZIP file
       - name: Find ZIP file
         id: find_zip
         run: |
           FILE=$(ls src/bonsai/dist/bonsai_*.zip)
+          BASENAME=$(basename "$FILE")
           echo "zip_file=$FILE" >> $GITHUB_OUTPUT
+          echo "zip_name=$BASENAME" >> $GITHUB_OUTPUT
 
-      # 🔟 Upload zip to GitHub release
       - name: Upload zip to release
         uses: svenstaro/upload-release-action@v2
         with:
           repo_token: ${{ secrets.GITHUB_TOKEN }}
           file: ${{ steps.find_zip.outputs.zip_file }}
-          asset_name: ${{ steps.find_zip.outputs.zip_file | basename }}
-          release_name: "bonsaiPR-${{steps.version.outputs.version}}-alpha${{steps.date.outputs.date}} (unstable)"
-          tag: "bonsaiPR-${{steps.version.outputs.version}}-alpha${{steps.date.outputs.date}}"
+          asset_name: ${{ steps.find_zip.outputs.zip_name }}
+          release_name: "bonsaiPR-${{ steps.version.outputs.version }}-alpha${{ steps.date.outputs.date }} (unstable)"
+          tag: "bonsaiPR-${{ steps.version.outputs.version }}-alpha${{ steps.date.outputs.date }}"
           overwrite: true
           body: |
             Daily BonsaiPR build including all open PRs from: ${{ steps.merge_prs.outputs.pr_owners }}
             Merged PRs: ${{ steps.merge_prs.outputs.merged_prs }}
-
