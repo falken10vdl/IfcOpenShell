@@ -2,6 +2,11 @@ name: bonsai_linux_PR
 
 on:
   workflow_dispatch:
+    inputs:
+      alpha_date:
+        description: 'Date to base the alpha release on (format: yymmdd)'
+        required: false
+        default: '250910'
 
 jobs:
   build-linux-py311:
@@ -21,9 +26,9 @@ jobs:
         id: version
         run: echo "version=$(cat VERSION)" >> $GITHUB_OUTPUT
 
-      - name: Get current date
-        id: date
-        run: echo "date=$(date +'%y%m%d%H%M')" >> $GITHUB_OUTPUT
+      - name: Get time suffix (hhmm)
+        id: time
+        run: echo "hhmm=$(date +'%H%M')" >> $GITHUB_OUTPUT
 
       - name: Compile Bonsai (Linux, py311)
         run: |
@@ -43,7 +48,7 @@ jobs:
           repo_token: ${{ secrets.GITHUB_TOKEN }}
           file: ${{ steps.find_zip.outputs.filepath }}
           asset_name: ${{ steps.find_zip.outputs.filename }}
-          release_name: "bonsai-${{ steps.version.outputs.version }}-alpha${{ steps.date.outputs.date }} (unstable)"
-          tag: "bonsai-${{ steps.version.outputs.version }}-alpha${{ steps.date.outputs.date }}"
+          release_name: "bonsai-${{ steps.version.outputs.version }}-alpha${{ github.event.inputs.alpha_date }}${{ steps.time.outputs.hhmm }} (unstable)"
+          tag: "bonsai-${{ steps.version.outputs.version }}-alpha${{ github.event.inputs.alpha_date }}${{ steps.time.outputs.hhmm }}"
           overwrite: true
-          body: "Manual Bonsai build for Linux (py311)."
+          body: "Manual Bonsai build for Linux (py311) based on alpha date ${{ github.event.inputs.alpha_date }}."
