@@ -12,10 +12,10 @@ on:
 
 jobs:
   build:
-    runs-on: ${{ matrix.os }}
+    runs-on: ${{ matrix.os == 'windows' && 'windows-latest' || matrix.os == 'macos' && 'macos-latest' || 'ubuntu-latest' }}
     strategy:
       matrix:
-        os: ${{ fromJSON('["' + join(split(github.event.inputs.platforms, ","), '","') + '"]') }}
+        os: ${{ fromJSON('["' }}${{ github.event.inputs.platforms.replace(',', '","') }}${{ '"]') }}
 
     steps:
       # 1️⃣ Checkout your fork
@@ -33,8 +33,7 @@ jobs:
 
       # 3️⃣ Install GitHub CLI
       - name: Install GitHub CLI
-        if: runner.os == 'Linux'
-        run: sudo apt install -y gh
+        run: sudo apt install -y gh || true
 
       - name: Authenticate GitHub CLI
         run: gh auth status || gh auth login --with-token <<< "${{ secrets.GITHUB_TOKEN }}"
@@ -63,8 +62,8 @@ jobs:
           echo "merged_prs=$merged_prs" >> $GITHUB_OUTPUT
           echo "pr_owners=$ALLOWED_OWNERS" >> $GITHUB_OUTPUT
 
-      # 5️⃣ Install build dependencies (Linux only)
-      - name: Install build dependencies
+      # 5️⃣ Install build dependencies (only Linux)
+      - name: Install Linux build dependencies
         if: matrix.os == 'linux'
         run: |
           sudo apt update
@@ -74,7 +73,7 @@ jobs:
           python3 -m pip install --upgrade pip
           python3 -m pip install typing_extensions
 
-      # 6️⃣ Setup Python 3.11 (Linux only)
+      # 6️⃣ Setup Python 3.11
       - name: Setup Python 3.11
         if: matrix.os == 'linux'
         uses: actions/setup-python@v4
@@ -89,7 +88,7 @@ jobs:
         id: date
         run: echo "date=$(date +'%y%m%d%H%M')" >> $GITHUB_OUTPUT
 
-      # 8️⃣ Build BonsaiPR
+      # 8️⃣ Build Bonsai
       - name: Build BonsaiPR
         run: |
           cd src/bonsai
