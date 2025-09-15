@@ -119,19 +119,16 @@ jobs:
               echo "⚠ Wheel platform might not match expected (py311, linux): $wheel_name"
             fi
             
-            # Check wheel compatibility tags
+            # Check wheel compatibility tags using bash string manipulation
             echo "Wheel compatibility details:"
-            python3 -c "
-import sys
-wheel_name = '$wheel_name'
-parts = wheel_name.replace('.whl', '').split('-')
-if len(parts) >= 5:
-    print(f'  Package: {parts[0]}')
-    print(f'  Version: {parts[1]}')
-    print(f'  Python: {parts[2]}')
-    print(f'  ABI: {parts[3]}')
-    print(f'  Platform: {parts[4]}')
-"
+            IFS='-' read -ra PARTS <<< "${wheel_name%.whl}"
+            if [ ${#PARTS[@]} -ge 5 ]; then
+              echo "  Package: ${PARTS[0]}"
+              echo "  Version: ${PARTS[1]}"
+              echo "  Python: ${PARTS[2]}"
+              echo "  ABI: ${PARTS[3]}"
+              echo "  Platform: ${PARTS[4]}"
+            fi
           fi
 
       - name: Test IfcOpenShell wheel installation
@@ -148,7 +145,7 @@ if len(parts) >= 5:
             pip install "$wheel_file"
             
             # Test basic import
-            python -c "
+            python << 'EOF'
 try:
     import ifcopenshell
     print('✓ IfcOpenShell imports successfully')
@@ -164,7 +161,7 @@ except ImportError as e:
     exit(1)
 except Exception as e:
     print(f'⚠ IfcOpenShell imported but with issues: {e}')
-"
+EOF
             
             deactivate
             rm -rf test_env
@@ -182,7 +179,7 @@ except Exception as e:
           export PYTHONPATH="$PWD/test_import:$PYTHONPATH"
           
           echo "Testing basic addon structure..."
-          python -c "
+          python << 'EOF'
 import sys
 sys.path.insert(0, 'test_import')
 
@@ -194,8 +191,8 @@ try:
     # Check if bl_info exists
     if hasattr(bonsai, 'bl_info'):
         print('✓ bl_info found in addon')
-        print(f'  Name: {bonsai.bl_info.get(\"name\", \"Unknown\")}')
-        print(f'  Version: {bonsai.bl_info.get(\"version\", \"Unknown\")}')
+        print(f'  Name: {bonsai.bl_info.get("name", "Unknown")}')
+        print(f'  Version: {bonsai.bl_info.get("version", "Unknown")}')
     else:
         print('⚠ bl_info not found - this might be expected for some addon structures')
 
@@ -204,7 +201,7 @@ except ImportError as e:
     print('This might be expected if the addon requires Blender context')
 except Exception as e:
     print(f'⚠ Error during addon validation: {e}')
-"
+EOF
 
       - name: Find zip file
         id: find_zip
