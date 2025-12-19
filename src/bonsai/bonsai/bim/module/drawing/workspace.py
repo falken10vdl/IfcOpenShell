@@ -192,7 +192,7 @@ class AnnotationToolUI:
     @classmethod
     def draw(cls, context, layout):
         cls.layout = layout
-            cls.props = tool.Drawing.get_annotation_props(context)
+        cls.props = tool.Drawing.get_annotation_props(context)
 
         row = cls.layout.row(align=True)
         if not tool.Ifc.get():

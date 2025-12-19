@@ -100,7 +100,7 @@ class AddAnnotationType(bpy.types.Operator, tool.Ifc.Operator):
         has_representation = props.create_representation_for_type
         drawing = tool.Ifc.get_entity(bpy.context.scene.camera)
 
-            if has_representation:
+        if has_representation:
             obj = tool.Drawing.create_annotation_object(drawing, object_type)
         else:
             obj = bpy.data.objects.new(object_type, None)
