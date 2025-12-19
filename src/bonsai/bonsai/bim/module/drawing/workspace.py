@@ -134,7 +134,7 @@ class AnnotationTool(WorkSpaceTool):
 
     def draw_settings(context, layout, ws_tool):
         # Unlike operators, Blender doesn't treat workspace tools as a class, so we'll create our own.
-        AnnotationToolUI.draw(context, layout)
+            AnnotationToolUI.draw(context, layout, ws_tool)
 
 
 add_layout_hotkey_operator = partial(
@@ -192,7 +192,7 @@ class AnnotationToolUI:
     @classmethod
     def draw(cls, context, layout):
         cls.layout = layout
-        cls.props = tool.Drawing.get_annotation_props()
+            cls.props = tool.Drawing.get_annotation_props(context)
 
         row = cls.layout.row(align=True)
         if not tool.Ifc.get():

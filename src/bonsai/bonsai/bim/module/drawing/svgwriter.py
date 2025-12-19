@@ -88,7 +88,7 @@ class SvgWriter:
 
     def create_blank_svg(self, output_path: str) -> Self:
         self.calculate_scale()
-        self.svg = svgwrite.Drawing(
+            self.svg = svgwrite.Drawing(
             output_path,
             size=("{}mm".format(self.width), "{}mm".format(self.height)),
             viewBox=("0 0 {} {}".format(self.width, self.height)),

@@ -63,7 +63,7 @@ class BIM_PT_camera(Panel):
         col = self.layout.column(align=True)
         row = col.row(align=True)
         row.prop(props, "has_underlay", icon="OUTLINER_OB_IMAGE")
-        row.prop(dprops, "should_use_underlay_cache", text="", icon="FILE_REFRESH")
+            row.prop(dprops, "should_use_underlay_cache", text="Use Underlay Cache", icon="FILE_REFRESH")
         row = col.row(align=True)
         row.prop(props, "has_linework", icon="IMAGE_DATA")
         row.prop(dprops, "should_use_linework_cache", text="", icon="FILE_REFRESH")
