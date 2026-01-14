@@ -389,9 +389,9 @@ class EditItemUI:
         row = cls.layout.row()
         row.label(text="Item Mode", icon="MESH_DATA")
         row = cls.layout.row()
-        row.label(text="Context: " + ItemData.data["representation_identifier"], icon="SCENE_DATA")
+        row.label(text="Context: " + (ItemData.data["representation_identifier"] or "None"), icon="SCENE_DATA")
         row = cls.layout.row()
-        row.label(text="Type: " + ItemData.data["representation_type"], icon="OUTLINER_OB_MESH")
+        row.label(text="Type: " + (ItemData.data["representation_type"] or "None"), icon="OUTLINER_OB_MESH")
         cls.layout.menu("BIM_MT_add_representation_item", icon="ADD")
         if not AuthoringData.data["is_representation_item_active"]:
             return

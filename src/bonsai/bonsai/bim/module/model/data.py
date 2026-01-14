@@ -647,13 +647,13 @@ class ItemData:
     def representation_identifier(cls):
         props = tool.Geometry.get_geometry_props()
         rep = tool.Geometry.get_active_representation(props.representation_obj)
-        return rep.RepresentationIdentifier
+        return rep.RepresentationIdentifier if rep else None
 
     @classmethod
     def representation_type(cls):
         props = tool.Geometry.get_geometry_props()
         rep = tool.Geometry.get_active_representation(props.representation_obj)
-        return rep.RepresentationType
+        return rep.RepresentationType if rep else None
 
     @classmethod
     def representation_usage(cls):
