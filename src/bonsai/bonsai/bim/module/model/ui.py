@@ -20,7 +20,7 @@ import bpy
 import bonsai.bim
 import bonsai.tool as tool
 from bpy.types import Panel, Menu
-from bonsai.bim.helper import prop_with_search
+from bonsai.bim.helper import prop_with_search, should_show_panel
 from bonsai.bim.module.model.data import (
     AuthoringData,
     ArrayData,
@@ -676,6 +676,42 @@ class BIM_PT_external_parametric_geometry(bpy.types.Panel):
             for input in inputs:
                 row = layout.row(align=True)
                 row.prop(input, "default_value", text=input.name)
+
+
+class BIM_PT_gn_ifctypeproduct_generator(bpy.types.Panel):
+    bl_label = "GN IfcTypeProduct Generator"
+    bl_idname = "BIM_PT_gn_ifctypeproduct_generator"
+    bl_space_type = "PROPERTIES"
+    bl_region_type = "WINDOW"
+    bl_context = "scene"
+    bl_options = {"DEFAULT_CLOSED"}
+    bl_parent_id = "BIM_PT_tab_parametric_geometry"
+
+    @classmethod
+    def poll(cls, context):
+        if not tool.Ifc.get():
+            return False
+        
+        obj = context.active_object
+        if not obj:
+            return False
+        
+        if obj.type in {'MESH', 'CURVE', 'CURVES', 'POINTCLOUD', 'VOLUME', 'GREASEPENCIL'}:
+            for modifier in obj.modifiers:
+                if modifier.type == 'NODES':
+                    return True
+        
+        if obj.type == 'EMPTY':
+            for child in obj.children:
+                if child.type in {'MESH', 'CURVE', 'CURVES', 'POINTCLOUD', 'VOLUME', 'GREASEPENCIL'}:
+                    for modifier in child.modifiers:
+                        if modifier.type == 'NODES':
+                            return True
+        
+        return False
+
+    def draw(self, context):
+        pass
 
 
 def draw_door_properties(layout: bpy.types.UILayout, props: bpy.types.PropertyGroup) -> None:

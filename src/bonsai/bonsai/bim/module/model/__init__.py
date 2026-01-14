@@ -152,6 +152,7 @@ classes = (
     ui.BIM_MT_type_manager_menu,
     ui.BIM_MT_type_menu,
     ui.BIM_PT_external_parametric_geometry,
+    ui.BIM_PT_gn_ifctypeproduct_generator,
     ui.LaunchTypeMenu,
     ui.LaunchTypeManager,
     grid.BIM_OT_add_object,
