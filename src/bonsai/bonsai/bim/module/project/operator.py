@@ -1890,6 +1890,40 @@ class LoadLinkedProject(bpy.types.Operator, ImportHelper):
             self.elements |= set(self.file.by_type("IfcSpatialElement"))
         self.elements -= set(self.file.by_type("IfcFeatureElement"))
 
+        filter_file = Path(self.filepath).with_suffix(".ifc.filter.json")
+        if filter_file.exists():
+            try:
+                with open(filter_file, 'r') as f:
+                    filter_data = json.load(f)
+                query = filter_data.get("query")
+                if query:
+                    try:
+                        data = json.loads(query)
+                        if isinstance(data, dict) and "filter_structure" in data:
+                            if "query" in data:
+                                filtered_elements = ifcopenshell.util.selector.filter_elements(self.file, data["query"])
+                            else:
+                                filtered_elements = set()
+                                for group in data["filter_structure"]:
+                                    group_query = " ".join([f["name"] for f in group.get("filters", [])])
+                                    if group_query:
+                                        try:
+                                            group_elements = ifcopenshell.util.selector.filter_elements(self.file, group_query)
+                                            filtered_elements |= group_elements
+                                        except:
+                                            pass
+                        elif isinstance(data, dict) and "query" in data:
+                            filtered_elements = ifcopenshell.util.selector.filter_elements(self.file, data["query"])
+                        else:
+                            filtered_elements = ifcopenshell.util.selector.filter_elements(self.file, query)
+                    except (json.JSONDecodeError, ValueError):
+                        filtered_elements = ifcopenshell.util.selector.filter_elements(self.file, query)
+                    
+                    self.elements &= filtered_elements
+                    print(f"Applied filter: {len(self.elements)} elements remain after filtering")
+            except Exception as e:
+                print(f"Error applying filter from {filter_file}: {e}")
+
         if tool.Loader.settings.false_origin_mode == "MANUAL" and tool.Loader.settings.false_origin:
             tool.Loader.set_manual_blender_offset(self.file)
         elif tool.Loader.settings.false_origin_mode == "AUTOMATIC":
@@ -3163,6 +3197,178 @@ class ImageScalingTool(bpy.types.Operator, PolylineOperator):
         PolylineDecorator.uninstall()
         tool.Blender.update_viewport()
 
+        return {"FINISHED"}
+
+
+class EnableEditingLinkedElementFilter(bpy.types.Operator, tool.Ifc.Operator):
+    bl_idname = "bim.enable_editing_linked_element_filter"
+    bl_label = "Enable Editing Linked Element Filter"
+    bl_options = {"REGISTER", "UNDO"}
+    cancel: bpy.props.BoolProperty(default=False, options={'SKIP_SAVE'})
+
+    @classmethod
+    def description(cls, context, properties):
+        if properties.cancel:
+            return "Cancel editing the linked elements filter"
+        return "Enable editing options for the linked elements filter"
+
+    def _execute(self, context):
+        props = context.scene.BIMProjectProperties
+        if self.cancel:
+            props.linked_filter_mode = "NONE"
+            return
+        
+        props.linked_filter_mode = "INCLUDE"
+
+
+class EditLinkedElementFilter(bpy.types.Operator, tool.Ifc.Operator):
+    bl_idname = "bim.edit_linked_element_filter"
+    bl_label = "Edit Linked Element Filter"
+    bl_description = "Save the linked elements filter"
+    bl_options = {"REGISTER", "UNDO"}
+
+    def _execute(self, context):
+        props = context.scene.BIMProjectProperties
+        props.linked_filter_mode = "NONE"
+
+
+class SelectLinkedElementFilter(bpy.types.Operator, tool.Ifc.Operator):
+    bl_idname = "bim.select_linked_element_filter"
+    bl_label = "Select Linked Element Filter"
+    bl_description = "Select a saved filter to use for linked elements"
+    bl_options = {"REGISTER", "UNDO"}
+    filter_group: bpy.props.IntProperty()
+
+    def _execute(self, context):
+        props = context.scene.BIMProjectProperties
+        ifc_file = tool.Ifc.get()
+        filter_group = ifc_file.by_id(self.filter_group)
+        query = json.loads(filter_group.Description)["query"]
+        
+        props.filter_groups.clear()
+        
+        try:
+            data = json.loads(query)
+            if isinstance(data, dict) and "filter_structure" in data:
+                for group_data in data["filter_structure"]:
+                    new_group = props.filter_groups.add()
+                    for filter_data in group_data["filters"]:
+                        new_filter = new_group.filters.add()
+                        new_filter.name = filter_data.get("name", "")
+                        new_filter.value = filter_data.get("value", "")
+            elif isinstance(data, dict) and "query" in data:
+                query_str = data["query"]
+                tool.Search.import_filter_query(query_str, props.filter_groups)
+            else:
+                tool.Search.import_filter_query(query, props.filter_groups)
+        except (json.JSONDecodeError, ValueError):
+            tool.Search.import_filter_query(query, props.filter_groups)
+        
+        bpy.ops.bim.apply_linked_element_filter()
+
+
+class ApplyLinkedElementFilter(bpy.types.Operator, tool.Ifc.Operator):
+    bl_idname = "bim.apply_linked_element_filter"
+    bl_label = "Apply Linked Element Filter"
+    bl_description = "Apply filter to show/hide linked projects based on filter criteria"
+    bl_options = {"REGISTER", "UNDO"}
+
+    def _execute(self, context):
+        props = context.scene.BIMProjectProperties
+        query = tool.Search.export_filter_query(props.filter_groups)
+        
+        for link in props.links:
+            if not link.is_loaded or not link.empty_handle:
+                continue
+            
+            link_path = Path(bpy.path.abspath(link.name))
+            
+            if query:
+                try:
+                    linked_ifc = ifcopenshell.open(link_path)
+                    
+                    try:
+                        data = json.loads(query)
+                        if isinstance(data, dict) and "filter_structure" in data:
+                            filtered_elements = tool.Search.execute_filter_groups_from_json(data, linked_ifc)
+                        elif isinstance(data, dict) and "query" in data:
+                            filtered_elements = ifcopenshell.util.selector.filter_elements(linked_ifc, data["query"])
+                        else:
+                            filtered_elements = ifcopenshell.util.selector.filter_elements(linked_ifc, query)
+                    except (json.JSONDecodeError, ValueError):
+                        filtered_elements = ifcopenshell.util.selector.filter_elements(linked_ifc, query)
+
+                    has_matches = len(filtered_elements) > 0
+                    link.empty_handle.hide_set(not has_matches)
+                    
+                except Exception as e:
+                    print(f"Error applying filter to link {link.name}: {e}")
+                    link.empty_handle.hide_set(False)
+            else:
+                link.empty_handle.hide_set(False)
+
+
+class RegenerateLinkedBlenderObjects(bpy.types.Operator):
+    bl_idname = "bim.regenerate_linked_blender_objects"
+    bl_label = "Regenerate Linked Objects with Filter"
+    bl_description = "Reload all linked IFC files and regenerate their Blender objects applying the current filter"
+    bl_options = {"REGISTER", "UNDO"}
+
+    def execute(self, context):
+        props = context.scene.BIMProjectProperties
+        query = tool.Search.export_filter_query(props.filter_groups)
+        
+        if not query:
+            self.report({'INFO'}, "No filter set - links will be regenerated without filtering")
+        
+        links_to_reload = [link for link in props.links if link.is_loaded]
+        
+        if not links_to_reload:
+            self.report({'WARNING'}, "No loaded links to regenerate")
+            return {"CANCELLED"}
+        
+        link_info = []
+        for link in links_to_reload:
+            link_path = Path(bpy.path.abspath(link.name))
+            uuid = getattr(link, 'uuid', '')
+            link_info.append({
+                'filepath': link.name,
+                'uuid': uuid,
+                'path': link_path
+            })
+            
+            filter_file = link_path.with_suffix(".ifc.filter.json")
+            if query:
+                with open(filter_file, 'w') as f:
+                    json.dump({"query": query}, f)
+            elif filter_file.exists():
+                os.remove(filter_file)
+            
+            blend_cache = link_path.with_suffix(".ifc.cache.blend")
+            h5_cache = link_path.with_suffix(".ifc.cache.h5")
+            
+            for cache_file in [blend_cache, h5_cache]:
+                if cache_file.exists():
+                    try:
+                        os.remove(cache_file)
+                        print(f"Deleted cache: {cache_file}")
+                    except Exception as e:
+                        print(f"Error deleting cache {cache_file}: {e}")
+            
+            bpy.ops.bim.unload_link(filepath=link.name, link_uuid=uuid)
+        
+        for lib in list(bpy.data.libraries):
+            if lib.users == 0:
+                bpy.data.libraries.remove(lib)
+        
+        for info in link_info:
+            bpy.ops.bim.load_link(filepath=info['filepath'], link_uuid=info['uuid'], use_cache=False)
+        
+        for area in context.screen.areas:
+            if area.type == 'VIEW_3D':
+                area.tag_redraw()
+        
+        self.report({'INFO'}, f"Regenerated {len(link_info)} linked project(s) with filter")
         return {"FINISHED"}
 
 

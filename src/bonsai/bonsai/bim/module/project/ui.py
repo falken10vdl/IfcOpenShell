@@ -21,6 +21,7 @@ import bpy
 import os
 import ifcopenshell
 import bonsai.bim
+import bonsai.bim.helper
 import bonsai.tool as tool
 from bonsai.bim.helper import prop_with_search, draw_attributes
 from bpy.types import Panel, Menu, UIList
@@ -530,6 +531,49 @@ class BIM_PT_links(Panel):
                     row = box.row(align=True)
                     row.label(text=name)
                     row.label(text=value)
+
+
+class BIM_PT_linked_element_filters(Panel):
+    bl_label = "Linked Element Filters"
+    bl_idname = "BIM_PT_linked_element_filters"
+    bl_options = {"DEFAULT_CLOSED"}
+    bl_space_type = "PROPERTIES"
+    bl_region_type = "WINDOW"
+    bl_context = "scene"
+    bl_parent_id = "BIM_PT_links"
+
+    @classmethod
+    def poll(cls, context):
+        return tool.Ifc.get()
+
+    def draw(self, context):
+        from bonsai.bim.module.project.data import LinkedElementFiltersData
+        if not LinkedElementFiltersData.is_loaded:
+            LinkedElementFiltersData.load()
+
+        props = context.scene.BIMProjectProperties
+
+        if props.linked_filter_mode == "INCLUDE":
+            bonsai.bim.helper.draw_filter(
+                self.layout, props.filter_groups, LinkedElementFiltersData, "project_filter"
+            )
+            row = self.layout.row(align=True)
+            row.operator("bim.edit_linked_element_filter", icon="CHECKMARK", text="Save Filter")
+            op = row.operator("bim.enable_editing_linked_element_filter", icon="CANCEL", text="")
+            op.cancel = True
+            
+            row = self.layout.row(align=True)
+            row.operator("bim.regenerate_linked_blender_objects", icon="FILE_REFRESH", text="Regenerate Links with Filter")
+        else:
+            row = self.layout.row(align=True)
+            text = "Filter Linked Elements" if LinkedElementFiltersData.data["has_include_filter"] else "No Filter (All elements visible)"
+            icon = "GREASEPENCIL" if LinkedElementFiltersData.data["has_include_filter"] else "ADD"
+            row.label(text=text, icon="FILTER")
+            row.operator("bim.enable_editing_linked_element_filter", icon=icon, text="")
+            
+            if LinkedElementFiltersData.data["has_include_filter"]:
+                row = self.layout.row(align=True)
+                row.operator("bim.regenerate_linked_blender_objects", icon="FILE_REFRESH", text="Regenerate Links with Filter")
 
 
 class BIM_UL_library(UIList):

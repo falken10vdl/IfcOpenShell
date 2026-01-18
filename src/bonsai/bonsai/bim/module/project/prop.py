@@ -24,7 +24,7 @@ import bonsai.tool as tool
 import bonsai.bim.helper
 from bonsai.bim.module.project.data import ProjectData, ProjectLibraryData
 from bonsai.bim.ifc import IfcStore
-from bonsai.bim.prop import StrProperty, ObjProperty, Attribute
+from bonsai.bim.prop import StrProperty, ObjProperty, Attribute, BIMFilterGroup
 from bpy.types import PropertyGroup
 from bpy.props import (
     PointerProperty,
@@ -290,6 +290,15 @@ class BIMProjectProperties(PropertyGroup):
     active_filter_category_index: IntProperty(name="Active Filter Category Index")
     filter_query: StringProperty(name="Filter Query")
     should_filter_spatial_elements: BoolProperty(name="Filter Spatial Elements", default=False)
+    filter_groups: CollectionProperty(name="Filter Groups", type=BIMFilterGroup)
+    linked_filter_mode: EnumProperty(
+        items=[
+            ("NONE", "None", ""),
+            ("INCLUDE", "Include", ""),
+        ],
+        name="Linked Element Filter Mode",
+        default="NONE"
+    )
     geometry_library: bpy.props.EnumProperty(
         items=[
             ("opencascade", "OpenCASCADE", "Best for stability and accuracy"),

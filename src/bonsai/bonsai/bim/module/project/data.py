@@ -18,6 +18,7 @@
 
 import os
 import bpy
+import json
 import bonsai.tool as tool
 import ifcopenshell.util.file
 from bonsai.bim.ifc import IfcStore
@@ -30,6 +31,7 @@ def refresh():
     ProjectData.is_loaded = False
     LinksData.is_loaded = False
     ProjectLibraryData.is_loaded = False
+    LinkedElementFiltersData.is_loaded = False
 
 
 class ProjectData:
@@ -173,3 +175,36 @@ class LinksData:
     linked_data = {}
     enable_culling = False
     is_loaded = False
+
+
+class LinkedElementFiltersData:
+    data = {}
+    is_loaded = False
+
+    @classmethod
+    def load(cls):
+        cls.data = {
+            "saved_searches": cls.saved_searches(),
+            "has_include_filter": cls.has_include_filter(),
+        }
+        cls.is_loaded = True
+
+    @classmethod
+    def saved_searches(cls):
+        if not tool.Ifc.get():
+            return []
+        groups = tool.Ifc.get().by_type("IfcGroup")
+        results = []
+        for group in groups:
+            try:
+                data = json.loads(group.Description)
+                if isinstance(data, dict) and data.get("type", None) == "BBIM_Search" and data.get("query", None):
+                    results.append(group)
+            except:
+                pass
+        return [(str(g.id()), g.Name or "Unnamed", "") for g in sorted(results, key=lambda x: x.Name or "Unnamed")]
+
+    @classmethod
+    def has_include_filter(cls):
+        props = bpy.context.scene.BIMProjectProperties
+        return bool(tool.Search.export_filter_query(props.filter_groups))

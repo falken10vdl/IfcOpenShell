@@ -84,6 +84,8 @@ class Search(bonsai.core.tool.Search):
             return tool.Blender.get_csv_props().filter_groups
         elif module == "diff":
             return tool.Blender.get_diff_props().filter_groups
+        elif module == "project_filter":
+            return bpy.context.scene.BIMProjectProperties.filter_groups
         elif module == "drawing_include":
             assert (scene := bpy.context.scene) and (camera_obj := (scene.camera))
             return tool.Drawing.get_camera_props(camera_obj).include_filter_groups
