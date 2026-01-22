@@ -53,6 +53,7 @@ classes = (
     operator.OverrideDuplicateMoveLinked,
     operator.OverrideDuplicateMoveLinkedMacro,
     operator.OverrideDuplicateMoveMacro,
+    operator.OverrideDuplicateMoveToCursorMacro,
     operator.OverrideEscape,
     operator.OverrideJoin,
     operator.OverrideMeshSeparate,
@@ -128,6 +129,8 @@ def register():
     operator.OverrideDuplicateMoveMacro.define("TRANSFORM_OT_translate")
     operator.OverrideDuplicateMoveLinkedMacro.define("BIM_OT_override_object_duplicate_move_linked")
     operator.OverrideDuplicateMoveLinkedMacro.define("TRANSFORM_OT_translate")
+    operator.OverrideDuplicateMoveToCursorMacro.define("BIM_OT_override_object_duplicate_move")
+    operator.OverrideDuplicateMoveToCursorMacro.define("VIEW3D_OT_snap_selected_to_cursor")
     operator.DuplicateMoveLinkedAggregateMacro.define("BIM_OT_object_duplicate_move_linked_aggregate")
     operator.DuplicateMoveLinkedAggregateMacro.define("BIM_OT_override_move_select")
     operator.DuplicateMoveLinkedAggregateMacro.define("TRANSFORM_OT_translate")
@@ -146,6 +149,8 @@ def register():
     if wm.keyconfigs.addon:
         km = wm.keyconfigs.addon.keymaps.new(name="Object Mode", space_type="EMPTY")
         kmi = km.keymap_items.new("bim.override_object_join", "J", "PRESS", ctrl=True)
+        addon_keymaps.append((km, kmi))
+        kmi = km.keymap_items.new("bim.override_object_duplicate_move_to_cursor_macro", "D", "PRESS", ctrl=True)
         addon_keymaps.append((km, kmi))
         kmi = km.keymap_items.new("bim.override_object_duplicate_move_macro", "D", "PRESS", shift=True)
         addon_keymaps.append((km, kmi))

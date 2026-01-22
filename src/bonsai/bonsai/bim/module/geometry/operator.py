@@ -1145,6 +1145,12 @@ class OverrideDuplicateMoveMacro(bpy.types.Macro):
     bl_options = {"REGISTER", "UNDO"}
 
 
+class OverrideDuplicateMoveToCursorMacro(bpy.types.Macro):
+    bl_idname = "bim.override_object_duplicate_move_to_cursor_macro"
+    bl_label = "IFC Duplicate Objects to Cursor"
+    bl_options = {"REGISTER", "UNDO"}
+
+
 class OverrideDuplicateMove(bpy.types.Operator):
     bl_idname = "bim.override_object_duplicate_move"
     bl_label = "IFC Duplicate Objects"
