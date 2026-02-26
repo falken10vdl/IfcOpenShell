@@ -102,8 +102,15 @@ def parse_markdown_it(text: str) -> list[dict[str, Union[str, None]]]:
     bold = False
     italic = False
     link_opening = None
-    link_text = None
+    link_text_parts = []
     i = 0
+    def flush_link(url, bold, italic):
+        if url and link_text_parts:
+            # Join with '' to preserve softbreaks as spaces (or could use '\n' if desired)
+            text = ''.join(link_text_parts)
+            return {"text": text, "url": url, "break": False, "bold": bold, "italic": italic}
+        return None
+
     while i < len(tokens):
         token = tokens[i]
         if token.type == "bullet_list_open":
@@ -116,13 +123,15 @@ def parse_markdown_it(text: str) -> list[dict[str, Union[str, None]]]:
                         if tokens[j].type == "inline":
                             for child in tokens[j].children or []:
                                 if child.type == "softbreak":
-                                    segments.append(
-                                        {"text": None, "url": None, "break": True, "bold": False, "italic": False}
-                                    )
+                                    if link_opening:
+                                        link_text_parts.append('\n')
+                                    else:
+                                        segments.append({"text": None, "url": None, "break": True, "bold": False, "italic": False})
                                 elif child.type == "html_inline" and child.content.strip().lower() == "<br>":
-                                    segments.append(
-                                        {"text": None, "url": None, "break": True, "bold": False, "italic": False}
-                                    )
+                                    if link_opening:
+                                        link_text_parts.append('\n')
+                                    else:
+                                        segments.append({"text": None, "url": None, "break": True, "bold": False, "italic": False})
                                 elif child.type == "strong_open":
                                     bold = True
                                 elif child.type == "strong_close":
@@ -133,32 +142,18 @@ def parse_markdown_it(text: str) -> list[dict[str, Union[str, None]]]:
                                     italic = False
                                 elif child.type == "link_open":
                                     link_opening = child
+                                    link_text_parts = []
                                 elif child.type == "text" and link_opening:
-                                    link_text = child.content
+                                    link_text_parts.append(child.content)
                                 elif child.type == "link_close" and link_opening:
                                     url = link_opening.attrGet("href")
-                                    if url and link_text:
-                                        segments.append(
-                                            {
-                                                "text": link_text,
-                                                "url": url,
-                                                "break": False,
-                                                "bold": bold,
-                                                "italic": italic,
-                                            }
-                                        )
+                                    link_segment = flush_link(url, bold, italic)
+                                    if link_segment:
+                                        segments.append(link_segment)
                                     link_opening = None
-                                    link_text = None
+                                    link_text_parts = []
                                 elif child.type == "text" and not link_opening:
-                                    segments.append(
-                                        {
-                                            "text": child.content,
-                                            "url": None,
-                                            "break": False,
-                                            "bold": bold,
-                                            "italic": italic,
-                                        }
-                                    )
+                                    segments.append({"text": child.content, "url": None, "break": False, "bold": bold, "italic": italic})
                         j += 1
                     i = j
                 else:
@@ -167,9 +162,15 @@ def parse_markdown_it(text: str) -> list[dict[str, Union[str, None]]]:
         elif token.type == "inline":
             for child in token.children or []:
                 if child.type == "softbreak":
-                    segments.append({"text": None, "url": None, "break": True, "bold": False, "italic": False})
+                    if link_opening:
+                        link_text_parts.append('\n')
+                    else:
+                        segments.append({"text": None, "url": None, "break": True, "bold": False, "italic": False})
                 elif child.type == "html_inline" and child.content.strip().lower() == "<br>":
-                    segments.append({"text": None, "url": None, "break": True, "bold": False, "italic": False})
+                    if link_opening:
+                        link_text_parts.append('\n')
+                    else:
+                        segments.append({"text": None, "url": None, "break": True, "bold": False, "italic": False})
                 elif child.type == "strong_open":
                     bold = True
                 elif child.type == "strong_close":
@@ -180,18 +181,18 @@ def parse_markdown_it(text: str) -> list[dict[str, Union[str, None]]]:
                     italic = False
                 elif child.type == "link_open":
                     link_opening = child
+                    link_text_parts = []
                 elif child.type == "text" and link_opening:
-                    link_text = child.content
+                    link_text_parts.append(child.content)
                 elif child.type == "link_close" and link_opening:
                     url = link_opening.attrGet("href")
-                    if url and link_text:
-                        segments.append({"text": link_text, "url": url, "break": False, "bold": bold, "italic": italic})
+                    link_segment = flush_link(url, bold, italic)
+                    if link_segment:
+                        segments.append(link_segment)
                     link_opening = None
-                    link_text = None
+                    link_text_parts = []
                 elif child.type == "text" and not link_opening:
-                    segments.append(
-                        {"text": child.content, "url": None, "break": False, "bold": bold, "italic": italic}
-                    )
+                    segments.append({"text": child.content, "url": None, "break": False, "bold": bold, "italic": italic})
         i += 1
     segments = [seg for seg in segments if seg.get("text") is not None or seg.get("break", False)]
     if not segments:
@@ -1026,7 +1027,8 @@ class SvgWriter:
 
         for text_literal in text_literals:
             text = tool.Drawing.replace_text_literal_variables(text_literal.Literal, product or element)
-
+            if newline_at:
+                text = helper.add_newline_between_words(text, newline_at)
             text_segments = parse_markdown_it(text)
 
             if len(text_segments) == 1 and text_segments[0]["url"] is None and not text_segments[0].get("break", False):
@@ -1053,6 +1055,7 @@ class SvgWriter:
                 line_idx = 0
                 new_line = True
                 bullet_next = False
+
                 for idx, segment in enumerate(text_segments):
                     if segment.get("break", False):
                         if segment.get("text") == "\u2022 ":
@@ -1067,30 +1070,35 @@ class SvgWriter:
                         text_content = "\u2022 " + (text_content or "")
                         bullet_next = False
 
-                    if new_line:
-                        dy, x, y = f"{line_idx}em", 0, 0
-                        new_line = False
-                    else:
-                        dy, x, y = None, None, None
+                    # Split text_content by \n and create a tspan for each line
+                    lines = text_content.split("\n")
+                    for i, line in enumerate(lines):
+                        if new_line or i > 0:
+                            dy, x, y = f"{line_idx}em", 0, 0
+                            new_line = False
+                        else:
+                            dy, x, y = None, None, None
 
-                    tspan = self.svg.tspan(text_content, class_=classes_str)
-                    if segment.get("bold", False):
-                        tspan.attribs["font-weight"] = "bold"
-                    if segment.get("italic", False):
-                        tspan.attribs["font-style"] = "italic"
-                    if dy is not None:
-                        tspan.attribs["dy"] = dy
-                    if x is not None:
-                        tspan.attribs["x"] = x
-                    if y is not None:
-                        tspan.attribs["y"] = y
+                        tspan = self.svg.tspan(line, class_=classes_str)
+                        if segment.get("bold", False):
+                            tspan.attribs["font-weight"] = "bold"
+                        if segment.get("italic", False):
+                            tspan.attribs["font-style"] = "italic"
+                        if dy is not None:
+                            tspan.attribs["dy"] = dy
+                        if x is not None:
+                            tspan.attribs["x"] = x
+                        if y is not None:
+                            tspan.attribs["y"] = y
 
-                    if segment["url"]:
-                        link_element = self.svg.a(href=segment["url"], target="_blank")
-                        link_element.add(tspan)
-                        text_tag.add(link_element)
-                    else:
-                        text_tag.add(tspan)
+                        if segment["url"]:
+                            link_element = self.svg.a(href=segment["url"], target="_blank")
+                            link_element.add(tspan)
+                            text_tag.add(link_element)
+                        else:
+                            text_tag.add(tspan)
+                        if i < len(lines) - 1:
+                            line_idx += 1
 
                 if fill_bg:
                     fill_bg_tag = self.add_fill_bg(text_tag)
