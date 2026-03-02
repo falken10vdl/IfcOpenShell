@@ -1389,6 +1389,7 @@ class Model(bonsai.core.tool.Model):
                 tool.Geometry,
                 obj=obj,
                 representation=body,
+                apply_openings=True,
             )
 
     @classmethod
@@ -1919,13 +1920,13 @@ class Model(bonsai.core.tool.Model):
 
         for group_type, group_counts in group_verts.items():
             if group_type == "IFCARCINDEX":
-                for group_count in group_counts.values():
-                    if group_count != 3:  # Each arc needs 3 verts
-                        return (False, "3POINT_ARC")
+                for group_index, group_count in list(group_counts.items()):
+                    if group_count != 3:  # Each arc needs exactly 3 verts; drop incomplete groups (e.g. after reset_vertex)
+                        groups["IFCARCINDEX"].remove(group_index)
             elif group_type == "IFCCIRCLE":
-                for group_count in group_counts.values():
-                    if group_count != 2:  # Each circle needs 2 verts
-                        return (False, "CIRCLE")
+                for group_index, group_count in list(group_counts.items()):
+                    if group_count != 2:  # Each circle needs exactly 2 verts; drop incomplete groups
+                        groups["IFCCIRCLE"].remove(group_index)
 
         loop_edges = list(bm.edges)
 
@@ -2015,10 +2016,10 @@ class Model(bonsai.core.tool.Model):
                     i = 0
                     segments = []
                     total_verts = len(loop_verts)
-                    while i < total_verts:
+                    while i < total_verts - 1:  # Need at least 2 points remaining for any segment
                         v = loop_verts[i]
                         if (
-                            (i + 1 != total_verts)
+                            (i + 2 < total_verts)  # Need 3 points (i, i+1, i+2) for an arc
                             and (gi := tool.Blender.bmesh_get_vertex_groups(v, deform_layer))
                             and (gi2 := tool.Blender.bmesh_get_vertex_groups(loop_verts[i + 1], deform_layer))
                             and (set(gi) & set(gi2))
@@ -2142,13 +2143,13 @@ class Model(bonsai.core.tool.Model):
 
         for group_type, group_counts in group_verts.items():
             if group_type == "IFCARCINDEX":
-                for group_count in group_counts.values():
-                    if group_count != 3:  # Each arc needs 3 verts
-                        return (False, "3POINT_ARC")
+                for group_index, group_count in list(group_counts.items()):
+                    if group_count != 3:  # Each arc needs exactly 3 verts; drop incomplete groups (e.g. after reset_vertex)
+                        groups["IFCARCINDEX"].remove(group_index)
             elif group_type == "IFCCIRCLE":
-                for group_count in group_counts.values():
-                    if group_count != 2:  # Each circle needs 2 verts
-                        return (False, "CIRCLE")
+                for group_index, group_count in list(group_counts.items()):
+                    if group_count != 2:  # Each circle needs exactly 2 verts; drop incomplete groups
+                        groups["IFCCIRCLE"].remove(group_index)
 
         loop_edges = list(bm.edges)
 
@@ -2240,10 +2241,10 @@ class Model(bonsai.core.tool.Model):
                     i = 0
                     segments = []
                     total_verts = len(loop_verts)
-                    while i < total_verts:
+                    while i < total_verts - 1:  # Need at least 2 points remaining for any segment
                         v = loop_verts[i]
                         if (
-                            (i + 1 != total_verts)
+                            (i + 2 < total_verts)  # Need 3 points (i, i+1, i+2) for an arc
                             and (gi := tool.Blender.bmesh_get_vertex_groups(v, deform_layer))
                             and (gi2 := tool.Blender.bmesh_get_vertex_groups(loop_verts[i + 1], deform_layer))
                             and (set(gi) & set(gi2))
@@ -2704,6 +2705,31 @@ class Model(bonsai.core.tool.Model):
         tool.Geometry.record_object_position(obj)
 
     @classmethod
+    def recreate_wall_alone(cls, element: ifcopenshell.entity_instance, obj: bpy.types.Object) -> None:
+        """Regenerate a WallAlone (IfcSurfaceCurveSweptAreaSolid) after a material layer thickness change.
+
+        Only the SweptArea thickness (YDim) is updated from the layer set total;
+        the Directrix curve is never touched.
+        """
+        representation = ifcopenshell.util.representation.get_representation(
+            element, "Model", "Body", "MODEL_VIEW"
+        )
+        if not representation or not representation.Items:
+            return
+        body_item = representation.Items[0]
+        if not body_item.is_a("IfcSurfaceCurveSweptAreaSolid"):
+            return
+        material_set = ifcopenshell.util.element.get_material(element, should_skip_usage=True)
+        new_thickness = sum(l.LayerThickness for l in material_set.MaterialLayers)
+        body_item.SweptArea.YDim = new_thickness
+        bonsai.core.geometry.switch_representation(
+            tool.Ifc,
+            tool.Geometry,
+            obj=obj,
+            representation=representation,
+        )
+
+    @classmethod
     def recalculate_walls(cls, walls: list[bpy.types.Object]) -> None:
         queue: set[tuple[ifcopenshell.entity_instance, bpy.types.Object]] = set()
         for wall in walls:
@@ -2729,7 +2755,11 @@ class Model(bonsai.core.tool.Model):
                 if material.is_a("IfcMaterialLayerSetUsage") and custom_offset is not None:
                     material.OffsetFromReferenceLine = custom_offset
 
-                cls.recreate_wall(element, wall)
+                psets = ifcopenshell.util.element.get_psets(element)
+                if psets.get("EPset_Parametric", {}).get("Engine") == "Bonsai.WallAlone":
+                    cls.recreate_wall_alone(element, wall)
+                else:
+                    cls.recreate_wall(element, wall)
 
     @classmethod
     def regenerate_slab(cls, obj: bpy.types.Object) -> None:

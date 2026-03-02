@@ -1106,7 +1106,10 @@ class Blender(bonsai.core.tool.Blender):
 
             :return: True if an action was taken, False otherwise
             """
-            if cls.is_roof(element):
+            psets = ifcopenshell.util.element.get_psets(element)
+            if psets.get("EPset_Parametric", {}).get("Engine") == "Bonsai.WallAlone":
+                bpy.ops.bim.enable_editing_wall_alone_axis()
+            elif cls.is_roof(element):
                 if cls.is_editing_roof_parameters(obj):
                     bpy.ops.bim.finish_editing_roof()
                 bpy.ops.bim.enable_editing_roof_path()

@@ -40,6 +40,7 @@ from . import (
     sverchok_modifier,
     ui,
     wall,
+    wall_alone,
     window,
     workspace,
 )
@@ -83,6 +84,10 @@ classes = (
     wall.RecalculateWall,
     wall.SplitWall,
     wall.UnjoinWalls,
+    wall_alone.DrawPolylineWallAlone,
+    wall_alone.EnableEditingWallAloneAxis,
+    wall_alone.DisableEditingWallAloneAxis,
+    wall_alone.EditWallAloneAxis,
     opening.AddBoolean,
     opening.CloneOpening,
     opening.EditOpenings,
@@ -251,6 +256,7 @@ tools: tuple[ToolsData, ...] = (
     ToolsData(workspace.RampFlightTool, {"bim.stair_flight_tool"}, False, False),
     ToolsData(workspace.WallTool, {"bim.explore_tool"}, True, True),
     ToolsData(workspace.RailingTool, {"bim.wall_tool"}, False, False),
+    ToolsData(workspace.WallAloneTool, {"bim.railing_tool"}, False, False),
 )
 
 

@@ -691,8 +691,13 @@ class ShowOpenings(Operator, tool.Ifc.Operator):
             bonsai.core.geometry.edit_object_placement(tool.Ifc, tool.Geometry, tool.Surveyor, obj=obj)
         openings_elements_to_load = [o for o in openings_elements if not tool.Ifc.get_object(o)]
         openings_objects = tool.Model.load_openings(openings_elements_to_load)
-        for obj in openings_objects:
-            tool.Root.add_tracked_opening(obj, "OPENING")
+        for opening_element in openings_elements:
+            opening_obj = tool.Ifc.get_object(opening_element)
+            if not opening_obj:
+                continue
+            already_tracked = any(op.obj == opening_obj for op in tool.Model.get_model_props().openings)
+            if not already_tracked:
+                tool.Root.add_tracked_opening(opening_obj, "OPENING")
 
 
 class UpdateOpeningsFocus(Operator):
@@ -797,7 +802,8 @@ class EditOpenings(Operator, tool.Ifc.Operator):
         self.edit_openings(building_objs, opening_elements)
 
         tool.Model.purge_scene_openings()
-        tool.Model.reload_body_representation(building_objs)
+        if building_objs:
+            tool.Model.reload_body_representation(building_objs)
         bpy.ops.bim.update_openings_focus()
         return {"FINISHED"}
 
@@ -843,6 +849,7 @@ class EditOpenings(Operator, tool.Ifc.Operator):
     def edit_openings(
         self, building_objs: set[bpy.types.Object], opening_elements: set[ifcopenshell.entity_instance]
     ) -> None:
+        """Process openings: save placement/representation changes and clean up Blender objects."""
         props = tool.Geometry.get_geometry_props()
         objects_to_remove: set[bpy.types.Object] = set()
         for opening_element in opening_elements:
@@ -868,7 +875,7 @@ class EditOpenings(Operator, tool.Ifc.Operator):
 
                 building_objs.update(
                     self.get_all_building_objects_of_similar_openings(opening_element)
-                )  # NB this has nothing to do with clone similar_opening
+                )
                 tool.Ifc.unlink(element=opening_element)
                 if props.representation_obj == opening_obj:
                     props.representation_obj = None

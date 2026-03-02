@@ -24,12 +24,17 @@ import bpy
 import bpy.utils.previews
 from bpy.types import Menu, WorkSpaceTool
 
+import ifcopenshell.util.element
+import ifcopenshell.util.representation
+import ifcopenshell.util.unit
+import bonsai.core.geometry
 import bonsai.core.model as core
 import bonsai.tool as tool
 from bonsai.bim.helper import draw_attribute, prop_with_search
 from bonsai.bim.module.model.data import AuthoringData, ItemData
 from bonsai.bim.module.model.prop import get_ifc_class
 from bonsai.bim.module.model.wall import DumbWallAligner, DumbWallJoiner
+from bonsai.bim.module.model.wall_alone import WALL_ALONE_ENGINE
 from bonsai.bim.module.system.data import PortData
 
 
@@ -130,6 +135,17 @@ class RailingTool(BimTool):
     bl_icon = os.path.join(os.path.dirname(__file__), "ops.authoring.railing")
     bl_widget = None
     ifc_element_type = "IfcRailingType"
+
+
+class WallAloneTool(BimTool):
+    bl_space_type = "VIEW_3D"
+    bl_context_mode = "OBJECT"
+    bl_idname = "bim.wall_alone_tool"
+    bl_label = "Wall Alone Tool"
+    bl_description = "Create and edit single walls defined by a 2-D polyline axis/directrix (IFC4+)"
+    bl_icon = os.path.join(os.path.dirname(__file__), "ops.authoring.wall")
+    bl_widget = None
+    ifc_element_type = "IfcWallType"
 
 
 class SlabTool(BimTool):
@@ -733,6 +749,9 @@ class EditObjectUI:
         elif AuthoringData.data["ifc_element_type"] != ifc_element_type:
             AuthoringData.load(ifc_element_type)
 
+        current_tool = bpy.context.workspace.tools.from_space_view3d_mode(bpy.context.mode)
+        is_wall_alone = current_tool and current_tool.idname == "bim.wall_alone_tool"
+
         if context.region.type == "TOOL_HEADER":
             aprops = tool.Aggregate.get_aggregate_props()
             if aprops.in_aggregate_mode:
@@ -749,10 +768,14 @@ class EditObjectUI:
 
             text = format_ifc_camel_case(AuthoringData.data["active_class"])
             layout.label(text=f"{text} Edit Tools:", icon="RESTRICT_SELECT_OFF")
-            cls.draw_parameter_adjustments(context)
-            row = cls.draw_operations(context)
-            cls.draw_void(context, row)
-            cls.draw_align(context)
+            if is_wall_alone:
+                row = cls.draw_wall_alone_operations(context)
+                cls.draw_void(context, row)
+            else:
+                cls.draw_parameter_adjustments(context)
+                row = cls.draw_operations(context)
+                cls.draw_void(context, row)
+                cls.draw_align(context)
             cls.draw_aggregation(context)
             cls.draw_qto(context)
             cls.draw_modes(context)
@@ -760,10 +783,14 @@ class EditObjectUI:
         if context.region.type in ("UI", "WINDOW"):
             text = format_ifc_camel_case(AuthoringData.data["active_class"])
             layout.label(text=f"{text} Edit Tools:", icon="RESTRICT_SELECT_OFF")
-            cls.draw_parameter_adjustments(context)
-            row = cls.draw_operations(context)
-            cls.draw_void(context, row)
-            cls.draw_align(context)
+            if is_wall_alone:
+                row = cls.draw_wall_alone_operations(context)
+                cls.draw_void(context, row)
+            else:
+                cls.draw_parameter_adjustments(context)
+                row = cls.draw_operations(context)
+                cls.draw_void(context, row)
+                cls.draw_align(context)
             cls.draw_aggregation(context)
             cls.draw_qto(context)
             cls.draw_modes(context)
@@ -1018,6 +1045,19 @@ class EditObjectUI:
             add_layout_hotkey_operator(row, "Clone Opening", "S_L", "", ui_context, operator="bim.clone_opening")
 
     @classmethod
+    def draw_wall_alone_operations(cls, context):
+        ui_context = str(context.region.type)
+        row = cls.layout.row(align=True)
+        row.separator()
+        if ui_context != "TOOL_HEADER":
+            row.label(text="Operations")
+        row = cls.layout.row(align=True) if ui_context != "TOOL_HEADER" else row
+        add_layout_hotkey_operator(
+            row, "Extend Height", "C_E", "Extend wall height to 3D cursor Z position", ui_context
+        )
+        return row
+
+    @classmethod
     def draw_align(cls, context):
         ui_context = str(context.region.type)
         row = cls.layout.row(align=True)
@@ -1179,6 +1219,13 @@ class Hotkey(bpy.types.Operator, tool.Ifc.Operator):
 
         for obj in tool.Blender.get_selected_objects():
             obj.select_set(False)
+
+        current_tool = bpy.context.workspace.tools.from_space_view3d_mode(bpy.context.mode)
+        if current_tool and current_tool.idname == "bim.wall_alone_tool":
+            if not bpy.ops.bim.draw_polyline_wall_alone.poll():
+                self.report({"WARNING"}, "WallAlone requires IFC4 or later.")
+                return {"CANCELLED"}
+            return bpy.ops.bim.draw_polyline_wall_alone("INVOKE_DEFAULT")
 
         if tool.Model.get_usage_type(relating_type) == "LAYER2":
             return bpy.ops.bim.draw_polyline_wall("INVOKE_DEFAULT")
@@ -1454,44 +1501,84 @@ class Hotkey(bpy.types.Operator, tool.Ifc.Operator):
         cursor_z = bpy.context.scene.cursor.location.z
         layer2_objects = []
         layer2_bases = []
+        wall_alone_objects = []
 
         for obj in bpy.context.selected_objects:
             element = tool.Ifc.get_entity(obj)
-            if element and tool.Model.get_usage_type(element) == "LAYER2":
+            if not element:
+                continue
+            if ifcopenshell.util.element.get_psets(element).get("EPset_Parametric", {}).get("Engine") == WALL_ALONE_ENGINE:
+                wall_alone_objects.append(obj)
+            elif tool.Model.get_usage_type(element) == "LAYER2":
                 obj_base_z = obj.matrix_world.translation.z
                 layer2_objects.append(obj)
                 layer2_bases.append(obj_base_z)
 
-        if not layer2_objects:
-            self.report({"ERROR"}, "No LAYER2 objects selected")
+        if not layer2_objects and not wall_alone_objects:
+            self.report({"ERROR"}, "No LAYER2 or WallAlone objects selected")
             return
 
-        # --- tolerance check ---
-        tolerance = 1e-5  # to provide a little wiggle room
-        if layer2_bases and (max(layer2_bases) - min(layer2_bases)) > tolerance:
-            min_base = min(layer2_bases)
-            max_base = max(layer2_bases)
-            self.report(
-                {"ERROR"},
-                f"Selected LAYER2 objects have different base heights ({min_base:.3f}m to {max_base:.3f}m). "
-                f"All objects must be at the exact same base level (tolerance {tolerance}).",
-            )
-            return
+        if layer2_objects:
+            # --- tolerance check ---
+            tolerance = 1e-5  # to provide a little wiggle room
+            if layer2_bases and (max(layer2_bases) - min(layer2_bases)) > tolerance:
+                min_base = min(layer2_bases)
+                max_base = max(layer2_bases)
+                self.report(
+                    {"ERROR"},
+                    f"Selected LAYER2 objects have different base heights ({min_base:.3f}m to {max_base:.3f}m). "
+                    f"All objects must be at the exact same base level (tolerance {tolerance}).",
+                )
+            else:
+                # use the mean base as the "common" one to avoid floating-point mismatches
+                common_base = sum(layer2_bases) / len(layer2_bases)
+                new_height = cursor_z - common_base
 
-        # use the mean base as the "common" one to avoid floating-point mismatches
-        common_base = sum(layer2_bases) / len(layer2_bases)
-        new_height = cursor_z - common_base
+                if new_height > 0:
+                    props = tool.Model.get_model_props()
+                    props.extrusion_depth = new_height
+                    bpy.ops.bim.change_extrusion_depth(depth=new_height)
+                    self.report({"INFO"}, f"Extended {len(layer2_objects)} LAYER2 object(s) to z: {cursor_z:.2f}m")
+                else:
+                    self.report(
+                        {"ERROR"},
+                        f"Negative height not allowed. Cursor ({cursor_z:.2f}m) must be above object base ({common_base:.2f}m)",
+                    )
 
-        if new_height > 0:
-            props = tool.Model.get_model_props()
-            props.extrusion_depth = new_height
-            bpy.ops.bim.change_extrusion_depth(depth=new_height)
-            self.report({"INFO"}, f"Extended {len(layer2_objects)} LAYER2 object(s) to z: {cursor_z:.2f}m")
-        else:
-            self.report(
-                {"ERROR"},
-                f"Negative height not allowed. Cursor ({cursor_z:.2f}m) must be above object base ({common_base:.2f}m)",
-            )
+        if wall_alone_objects:
+            ifc_file = tool.Ifc.get()
+            si_conversion = ifcopenshell.util.unit.calculate_unit_scale(ifc_file)
+            updated = 0
+            for obj in wall_alone_objects:
+                element = tool.Ifc.get_entity(obj)
+                new_height = cursor_z - obj.matrix_world.translation.z
+                if new_height <= 0:
+                    self.report({"WARNING"}, f"Skipping '{obj.name}': cursor must be above the object base")
+                    continue
+                representation = ifcopenshell.util.representation.get_representation(
+                    element, "Model", "Body", "MODEL_VIEW"
+                )
+                if not representation:
+                    continue
+                body_item = representation.Items[0]
+                if not body_item.is_a("IfcSurfaceCurveSweptAreaSolid"):
+                    continue
+                new_xdim = new_height / si_conversion
+                body_item.SweptArea.XDim = new_xdim
+                # Keep the profile Position offset in sync so the bottom stays at Z=0.
+                if body_item.SweptArea.Position:
+                    body_item.SweptArea.Position.Location.Coordinates = (new_xdim / 2, 0.0)
+                else:
+                    ifc_file = tool.Ifc.get()
+                    body_item.SweptArea.Position = ifc_file.createIfcAxis2Placement2D(
+                        Location=ifc_file.createIfcCartesianPoint([new_xdim / 2, 0.0])
+                    )
+                bonsai.core.geometry.switch_representation(
+                    tool.Ifc, tool.Geometry, obj=obj, representation=representation
+                )
+                updated += 1
+            if updated:
+                self.report({"INFO"}, f"Extended {updated} WallAlone object(s) to z: {cursor_z:.2f}m")
 
 
 custom_icon_previews = None

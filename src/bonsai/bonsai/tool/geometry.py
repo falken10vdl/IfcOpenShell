@@ -904,6 +904,7 @@ class Geometry(bonsai.core.tool.Geometry):
                         continue
 
                     mesh_name = tool.Loader.get_mesh_name_from_shape(shape.geometry)
+                    verts_count = len(shape.geometry.verts) // 3
                     mesh = meshes.get(mesh_name)
                     if mesh is None:
                         if element.is_a("IfcAnnotation") and element.ObjectType == "DRAWING":
@@ -1350,6 +1351,7 @@ class Geometry(bonsai.core.tool.Geometry):
         """
         representation = cls.get_active_representation(obj)
         assert representation
+        element = tool.Ifc.get_entity(obj)
         bonsai.core.geometry.switch_representation(
             tool.Ifc,
             tool.Geometry,
