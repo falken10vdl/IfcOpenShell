@@ -27,13 +27,14 @@ open; the user decides whether to close the loop or not.
 
 IFC representation strategy
 ---------------------------
-Body:  IfcSurfaceCurveSweptAreaSolid  (RepresentationType = "SweptSolid")
-         SweptArea        = IfcRectangleProfileDef (thickness × height)
-         Directrix        = IfcIndexedPolyCurve
-                              ├─ IfcCartesianPointList2D
-                              └─ Segments: IfcLineIndex (straight) | IfcArcIndex (3-pt arc)
-         ReferenceSurface = IfcPlane  (the XY plane; normal = (0,0,1))
-Axis:  Plan/Axis/GRAPH_VIEW  — projection of the directrix onto XY
+Body:  IfcExtrudedAreaSolid  (RepresentationType = "SweptSolid")
+         SweptArea        = IfcArbitraryClosedProfileDef with IfcIndexedPolyCurve
+                              footprint built by offsetting the directrix ± t/2
+                              (arc segments are discretised to dense polylines)
+         ExtrudedDirection = (0, 0, 1)  — vertical extrusion
+         Depth            = wall height
+Axis:  Plan/Axis/GRAPH_VIEW  — directrix (IfcIndexedPolyCurve) stored as item[0]
+                               followed by smooth-arc display items
 
 Requires IFC4 or later — IFC2X3 is not supported.
 
@@ -87,12 +88,7 @@ WALL_ALONE_ENGINE = "Bonsai.WallAlone"
 
 
 def _is_wall_alone_element(element: ifcopenshell.entity_instance) -> bool:
-    """Return True if *element* is a WallAlone wall.
-
-    OCC boolean operations on IfcSurfaceCurveSweptAreaSolid are unreliable,
-    so openings on WallAlone walls must be applied via Blender boolean
-    modifiers instead of the geometry engine.
-    """
+    """Return True if *element* is a WallAlone wall."""
     psets = ifcopenshell.util.element.get_psets(element)
     return psets.get("EPset_Parametric", {}).get("Engine") == WALL_ALONE_ENGINE
 
@@ -214,23 +210,177 @@ def _make_display_axis_items(ifc_file, directrix):
 
 
 # ---------------------------------------------------------------------------
+# Wall footprint helpers — offset a directrix poly-arc into a closed profile
+# ---------------------------------------------------------------------------
+
+
+def _pts_close_2d(a: tuple, b: tuple, tol: float = 1e-9) -> bool:
+    """Return True when 2-D points *a* and *b* are within *tol* of each other."""
+    return abs(a[0] - b[0]) < tol and abs(a[1] - b[1]) < tol
+
+
+def _unit_normal_2d(dx: float, dy: float) -> tuple:
+    """Return the left-hand unit normal of vector (dx, dy)."""
+    length = (dx * dx + dy * dy) ** 0.5
+    if length < 1e-12:
+        return (0.0, 1.0)
+    return (-dy / length, dx / length)
+
+
+def _arc_total_angle_2d(p0: tuple, pm: tuple, p1: tuple) -> float:
+    """Return the signed total sweep angle (radians) of the arc through p0→pm→p1."""
+    import math
+
+    ax, ay = p0
+    bx, by = pm
+    cx, cy = p1
+    d = 2.0 * (ax * (by - cy) + bx * (cy - ay) + cx * (ay - by))
+    if abs(d) < 1e-14:
+        return 0.0
+    ux = ((ax * ax + ay * ay) * (by - cy) + (bx * bx + by * by) * (cy - ay) + (cx * cx + cy * cy) * (ay - by)) / d
+    uy = ((ax * ax + ay * ay) * (cx - bx) + (bx * bx + by * by) * (ax - cx) + (cx * cx + cy * cy) * (bx - ax)) / d
+    a0 = math.atan2(ay - uy, ax - ux)
+    a1 = math.atan2(cy - uy, cx - ux)
+    am = math.atan2(by - uy, bx - ux)
+    da = a1 - a0
+    while da > math.pi:
+        da -= 2 * math.pi
+    while da < -math.pi:
+        da += 2 * math.pi
+    da_m = am - a0
+    while da_m > math.pi:
+        da_m -= 2 * math.pi
+    while da_m < -math.pi:
+        da_m += 2 * math.pi
+    if da != 0 and (da_m / da < 0 or abs(da_m) > abs(da)):
+        if da > 0:
+            da -= 2 * math.pi
+        else:
+            da += 2 * math.pi
+    return da
+
+
+def _discretize_arc_2d(p0: tuple, pm: tuple, p1: tuple, n_segs: int = 24) -> list:
+    """Return points that discretise the arc p0→pm→p1 into *n_segs* segments.
+
+    The returned list starts at p0 and ends at p1 (inclusive).
+    """
+    import math
+
+    ax, ay = p0
+    bx, by = pm
+    cx, cy = p1
+    d = 2.0 * (ax * (by - cy) + bx * (cy - ay) + cx * (ay - by))
+    if abs(d) < 1e-14:
+        return [p0, p1]
+    ux = ((ax * ax + ay * ay) * (by - cy) + (bx * bx + by * by) * (cy - ay) + (cx * cx + cy * cy) * (ay - by)) / d
+    uy = ((ax * ax + ay * ay) * (cx - bx) + (bx * bx + by * by) * (ax - cx) + (cx * cx + cy * cy) * (bx - ax)) / d
+    r = ((ax - ux) ** 2 + (ay - uy) ** 2) ** 0.5
+    a0 = math.atan2(ay - uy, ax - ux)
+    da = _arc_total_angle_2d(p0, pm, p1)
+    pts = []
+    for i in range(n_segs + 1):
+        angle = a0 + (i / n_segs) * da
+        pts.append((ux + r * math.cos(angle), uy + r * math.sin(angle)))
+    return pts
+
+
+def _build_wall_footprint_pts(ifc_coords: list, seg_entities, half_t: float) -> list:
+    """Offset directrix segments ±half_t to produce a closed footprint polygon.
+
+    *ifc_coords* is a list of (x, y) tuples in IFC model units.
+    *seg_entities* is the Segments tuple of the IfcIndexedPolyCurve (may be None).
+    *half_t* is half the wall thickness in the same units.
+
+    Returns a list of (x, y) tuples (not repeated-closed) forming the wall
+    footprint.  IfcArbitraryClosedProfileDef closes it implicitly.
+    """
+    # Expand arc segments into dense polyline points.
+    expanded: list = []
+    if seg_entities:
+        for seg in seg_entities:
+            indices = list(seg[0])
+            if len(indices) == 3:
+                p0 = ifc_coords[indices[0] - 1]
+                pm = ifc_coords[indices[1] - 1]
+                p1 = ifc_coords[indices[2] - 1]
+                arc_pts = _discretize_arc_2d(p0, pm, p1, n_segs=24)
+                if expanded and _pts_close_2d(expanded[-1], arc_pts[0]):
+                    arc_pts = arc_pts[1:]
+                expanded.extend(arc_pts)
+            else:
+                p0 = ifc_coords[indices[0] - 1]
+                p1 = ifc_coords[indices[1] - 1]
+                if expanded and _pts_close_2d(expanded[-1], p0):
+                    expanded.append(p1)
+                else:
+                    expanded.extend([p0, p1])
+    else:
+        expanded = list(ifc_coords)
+
+    def _offset_polyline(pts, d):
+        result = []
+        n = len(pts)
+        for i, p in enumerate(pts):
+            normals = []
+            if i > 0:
+                dx = pts[i][0] - pts[i - 1][0]
+                dy = pts[i][1] - pts[i - 1][1]
+                normals.append(_unit_normal_2d(dx, dy))
+            if i < n - 1:
+                dx = pts[i + 1][0] - pts[i][0]
+                dy = pts[i + 1][1] - pts[i][1]
+                normals.append(_unit_normal_2d(dx, dy))
+            if not normals:
+                result.append(p)
+                continue
+            nx = sum(nn[0] for nn in normals) / len(normals)
+            ny = sum(nn[1] for nn in normals) / len(normals)
+            length = (nx * nx + ny * ny) ** 0.5
+            if length > 1e-12:
+                nx /= length
+                ny /= length
+            result.append((p[0] + d * nx, p[1] + d * ny))
+        return result
+
+    left = _offset_polyline(expanded, +half_t)
+    right = _offset_polyline(expanded, -half_t)
+    return left + list(reversed(right))
+
+
+def _get_wall_alone_thickness_ifc(element) -> float:
+    """Return the total wall thickness in IFC model units from the material layer set."""
+    for rel in element.IsDefinedBy:
+        if rel.is_a("IfcRelDefinesByType"):
+            for assoc in rel.RelatingType.HasAssociations:
+                if assoc.is_a("IfcRelAssociatesMaterial"):
+                    mat = assoc.RelatingMaterial
+                    if mat.is_a("IfcMaterialLayerSet"):
+                        return sum(layer.LayerThickness for layer in mat.MaterialLayers)
+    return 0.2
+
+
+# ---------------------------------------------------------------------------
 # Geometry generator
 # ---------------------------------------------------------------------------
 
 
 class DumbWallAloneGenerator:
-    """Creates a single IfcWall swept along an open or closed 2-D polyline.
+    """Creates a single IfcWall extruded from an offset footprint.
 
-    The polyline is the horizontal axis/directrix of the wall.
-    A rectangular cross-section (wall thickness × wall height) is swept along
-    it using IfcSurfaceCurveSweptAreaSolid so the cross-section stays upright.
+    The user draws a 2-D polyline (open or closed) that acts as the wall
+    centreline/directrix.  The footprint is built by offsetting that
+    centreline ±t/2 (arc segments discretised to polylines) and closing
+    the two sides.  The solid is an IfcExtrudedAreaSolid extruded
+    vertically — all faces are planar so BOPAlgo boolean subtraction of
+    openings works reliably.
 
     The user is free to draw an open or a closed polyline; no closure is forced.
 
     Contrast with:
-        DumbSlabGenerator  →  IfcSlab,  closed footprint extruded vertically
-        DumbWallGenerator  →  IfcWall,  straight LAYER2 axis-based wall
-        DumbWallAloneGenerator  →  IfcWall,  polyline-axis directrix sweep
+        DumbSlabGenerator      →  IfcSlab,  closed footprint extruded vertically
+        DumbWallGenerator      →  IfcWall,  straight LAYER2 axis-based wall
+        DumbWallAloneGenerator →  IfcWall,  offset-footprint extrusion
     """
 
     def __init__(self, relating_type: ifcopenshell.entity_instance):
@@ -322,13 +472,15 @@ class DumbWallAloneGenerator:
 
         Body representation
         -------------------
-        IfcSurfaceCurveSweptAreaSolid  (RepresentationType = "SweptSolid")
-            SweptArea        = IfcRectangleProfileDef (thickness × height)
-            Directrix        = IfcIndexedPolyCurve  (self.polyline in local XY)
-            ReferenceSurface = IfcPlane at the XY plane (normal = (0,0,1))
+        IfcExtrudedAreaSolid  (RepresentationType = "SweptSolid")
+            SweptArea        = IfcArbitraryClosedProfileDef
+                               footprint = directrix offset ± t/2
+            ExtrudedDirection = (0, 0, 1)
+            Depth            = wall height
 
-        The XY reference surface keeps the rectangle upright: the plane's
-        Z-normal drives the height axis of the swept cross-section.
+        All faces are planar so BOPAlgo can subtract openings correctly.
+        The directrix (IfcIndexedPolyCurve) is preserved as item[0] of the
+        Plan/Axis/GRAPH_VIEW representation for the edit workflow.
         """
         ifc_class = self._get_ifc_class()
 
@@ -358,10 +510,10 @@ class DumbWallAloneGenerator:
 
         bonsai.core.geometry.edit_object_placement(tool.Ifc, tool.Geometry, tool.Surveyor, obj=obj)
 
-        # -- Body: IfcSurfaceCurveSweptAreaSolid
-        # The cross-section (IfcRectangleProfileDef) is swept along the user's
-        # polyline.  ReferenceSurface = horizontal IfcPlane (normal Z) keeps
-        # the rectangle upright regardless of directrix tangent direction.
+        # -- Body: IfcExtrudedAreaSolid with offset footprint
+        # The directrix is discretised (arcs → dense polylines) and offset ±t/2
+        # to build a closed horizontal footprint.  The solid is extruded vertically
+        # so all faces are planar — BOPAlgo boolean subtraction of openings works.
         unit_scale = self.unit_scale
         builder = ifcopenshell.util.shape_builder.ShapeBuilder(self.file)
 
@@ -378,40 +530,26 @@ class DumbWallAloneGenerator:
         if n >= 2 and _pts_equal(ifc_coords[0], ifc_coords[-1]):
             segments[-1] = self.file.createIfcLineIndex([n - 1, 1])
         directrix = self.file.createIfcIndexedPolyCurve(Points=point_list, Segments=segments)
-        # directrix_points kept for the Plan/Axis rep below (plain 2-D list)
-        directrix_points = ifc_coords
 
-        # Rectangular cross-section: XDim = height, YDim = thickness
-        # For IfcSurfaceCurveSweptAreaSolid with a Z-normal reference surface the
-        # profile X axis is aligned with the projected surface normal (vertical),
-        # so XDim controls height; YDim controls thickness (perpendicular to tangent).
-        #
-        # Without a Position the profile centroid sits at the directrix, so the wall
-        # would extend from -height/2 to +height/2 vertically.  We offset the
-        # profile centre by +XDim/2 along the profile X axis (= height direction)
-        # so the bottom edge is at the directrix plane (local Z = 0).
-        xdim_ifc = self.height / unit_scale
-        profile_position = self.file.createIfcAxis2Placement2D(
-            Location=self.file.createIfcCartesianPoint([xdim_ifc / 2, 0.0])
-        )
+        # Build the closed offset footprint for the extrusion.
+        half_t = (self.thickness / unit_scale) / 2.0
+        footprint_pts = _build_wall_footprint_pts(ifc_coords, segments, half_t)
+        fp_n = len(footprint_pts)
+        fp_point_list = self.file.createIfcCartesianPointList2D(footprint_pts)
+        fp_segments = [self.file.createIfcLineIndex([i + 1, (i + 1) % fp_n + 1]) for i in range(fp_n)]
+        outer_curve = self.file.createIfcIndexedPolyCurve(Points=fp_point_list, Segments=fp_segments)
         swept_area = self.file.create_entity(
-            "IfcRectangleProfileDef",
+            "IfcArbitraryClosedProfileDef",
             ProfileType="AREA",
-            Position=profile_position,
-            XDim=xdim_ifc,
-            YDim=self.thickness / unit_scale,
+            OuterCurve=outer_curve,
         )
 
-        # Horizontal reference plane: the XY plane (normal = Z).
-        # Its surface normal at every point of the directrix drives the
-        # height direction of the swept cross-section.
-        reference_surface = builder.plane(location=(0.0, 0.0, 0.0), normal=(0.0, 0.0, 1.0))
-
+        extrude_dir = self.file.createIfcDirection([0.0, 0.0, 1.0])
         body_item = self.file.create_entity(
-            "IfcSurfaceCurveSweptAreaSolid",
+            "IfcExtrudedAreaSolid",
             SweptArea=swept_area,
-            Directrix=directrix,
-            ReferenceSurface=reference_surface,
+            Depth=self.height / unit_scale,
+            ExtrudedDirection=extrude_dir,
         )
 
         representation = builder.get_representation(self.body_context, items=[body_item])
@@ -426,11 +564,11 @@ class DumbWallAloneGenerator:
         )
 
         # -- Axis representation (Plan/Axis/GRAPH_VIEW)
-        # Stores the 2-D projection of the directrix.  Straight segments become
-        # IfcPolyline; arc segments become IfcTrimmedCurve/IfcCircle so that
-        # Blender's viewport renders smooth arcs (same technique as the door swing).
+        # item[0] is the raw IfcIndexedPolyCurve directrix (read by the edit
+        # workflow).  The remaining items are smooth-arc display items used by
+        # Blender's viewport (same technique as the door swing).
         if self.axis_context:
-            axis_items = _make_display_axis_items(self.file, directrix)
+            axis_items = [directrix] + _make_display_axis_items(self.file, directrix)
             axis_rep = self.file.createIfcShapeRepresentation(
                 self.axis_context,
                 self.axis_context.ContextIdentifier,
@@ -655,9 +793,9 @@ def _disable_editing_wall_alone_axis(context: bpy.types.Context):
 class EnableEditingWallAloneAxis(bpy.types.Operator, tool.Ifc.Operator):
     """Enter edit mode to modify the 2-D axis/directrix path of a WallAlone.
 
-    Loads the IfcSurfaceCurveSweptAreaSolid's Directrix into the Blender mesh
-    and activates the CAD polyline editor (ProfileDecorator + bim.cad_tool).
-    The cross-section rectangle is not affected.
+    Reads the directrix (IfcIndexedPolyCurve) from item[0] of the Plan/Axis
+    representation and loads it into the Blender mesh for the CAD polyline
+    editor (ProfileDecorator + bim.cad_tool).
 
     Mirrors slab.EnableEditingExtrusionProfile but operates on an open or
     closed directrix curve instead of a closed IfcArbitraryClosedProfileDef.
@@ -689,20 +827,18 @@ class EnableEditingWallAloneAxis(bpy.types.Operator, tool.Ifc.Operator):
         obj = context.active_object
         element = tool.Ifc.get_entity(obj)
 
-        body = ifcopenshell.util.representation.get_representation(element, "Model", "Body", "MODEL_VIEW")
-        body = ifcopenshell.util.representation.resolve_representation(body)
-        body_item = body.Items[0]  # IfcSurfaceCurveSweptAreaSolid
-
-        position = Matrix()
-        if body_item.Position:
-            position = Matrix(ifcopenshell.util.placement.get_axis2placement(body_item.Position).tolist())
-            position.translation *= self.unit_scale
+        # The directrix (IfcIndexedPolyCurve) is stored as item[0] of the
+        # Plan/Axis/GRAPH_VIEW representation so the edit workflow can read
+        # it back without touching the body solid.
+        axis_rep = ifcopenshell.util.representation.get_representation(element, "Plan", "Axis", "GRAPH_VIEW")
+        axis_rep = ifcopenshell.util.representation.resolve_representation(axis_rep)
+        directrix = axis_rep.Items[0]  # IfcIndexedPolyCurve
 
         # Load the directrix curve into the Blender mesh.  import_curve handles
         # IfcIndexedPolyCurve (with IfcArcIndex / IfcLineIndex segments) and
         # sets up IFCARCINDEX vertex groups so the ProfileDecorator can round-
         # trip arc data correctly.
-        tool.Model.import_curve(body_item.Directrix, obj=obj, position=position)
+        tool.Model.import_curve(directrix, obj=obj, position=Matrix())
 
         bpy.ops.object.mode_set(mode="EDIT")
         ProfileDecorator.install(
@@ -732,10 +868,9 @@ class DisableEditingWallAloneAxis(bpy.types.Operator, tool.Ifc.Operator):
 class EditWallAloneAxis(bpy.types.Operator, tool.Ifc.Operator):
     """Confirm edits made in WallAlone axis edit mode.
 
-    Reads the current mesh edge loop, exports it as an IfcIndexedPolyCurve
-    (open or closed — matching whatever the mesh provides), updates the
-    Directrix of the IfcSurfaceCurveSweptAreaSolid, and also refreshes the
-    Plan/Axis representation.
+    Reads the current mesh edge loop, exports it as an IfcIndexedPolyCurve,
+    rebuilds the offset footprint (IfcArbitraryClosedProfileDef) of the
+    IfcExtrudedAreaSolid, and refreshes the Plan/Axis representation.
 
     Analogous to slab.EditExtrusionProfile but operates on the directrix path
     rather than a closed IfcArbitraryClosedProfileDef.
@@ -756,17 +891,12 @@ class EditWallAloneAxis(bpy.types.Operator, tool.Ifc.Operator):
 
         body = ifcopenshell.util.representation.get_representation(element, "Model", "Body", "MODEL_VIEW")
         body = ifcopenshell.util.representation.resolve_representation(body)
-        body_item = body.Items[0]  # IfcSurfaceCurveSweptAreaSolid
-
-        position = Matrix()
-        if body_item.Position:
-            position = Matrix(ifcopenshell.util.placement.get_axis2placement(body_item.Position).tolist())
-            position.translation *= self.unit_scale
+        body_item = body.Items[0]  # IfcExtrudedAreaSolid
 
         # Export the edited mesh back to an IfcIndexedPolyCurve.
         # export_curves() uses auto_detect_curves() which reads IFCARCINDEX vertex
         # groups and emits IfcArcIndex / IfcLineIndex segments accordingly.
-        new_curves = tool.Model.export_curves(obj, position=position)
+        new_curves = tool.Model.export_curves(obj, position=Matrix())
         if not new_curves:
             def msg(self, context):
                 self.layout.label(text="INVALID AXIS PATH")
@@ -780,9 +910,20 @@ class EditWallAloneAxis(bpy.types.Operator, tool.Ifc.Operator):
             return
 
         new_directrix = new_curves[0]
-        old_directrix = body_item.Directrix
-        body_item.Directrix = new_directrix
-        ifcopenshell.util.element.remove_deep2(ifc_file, old_directrix)
+
+        # Rebuild the offset footprint from the new directrix and update the
+        # IfcExtrudedAreaSolid's SweptArea in-place.
+        ifc_coords = list(new_directrix.Points.CoordList)
+        seg_entities = new_directrix.Segments
+        half_t = _get_wall_alone_thickness_ifc(element) / 2.0
+        footprint_pts = _build_wall_footprint_pts(ifc_coords, seg_entities, half_t)
+        fp_n = len(footprint_pts)
+        fp_point_list = ifc_file.createIfcCartesianPointList2D(footprint_pts)
+        fp_segments = [ifc_file.createIfcLineIndex([i + 1, (i + 1) % fp_n + 1]) for i in range(fp_n)]
+        new_outer_curve = ifc_file.createIfcIndexedPolyCurve(Points=fp_point_list, Segments=fp_segments)
+        old_outer_curve = body_item.SweptArea.OuterCurve
+        body_item.SweptArea.OuterCurve = new_outer_curve
+        ifcopenshell.util.element.remove_deep2(ifc_file, old_outer_curve)
 
         bonsai.core.geometry.switch_representation(
             tool.Ifc,
@@ -794,15 +935,15 @@ class EditWallAloneAxis(bpy.types.Operator, tool.Ifc.Operator):
         # Re-add Blender boolean modifiers (switch_representation clears them).
         _setup_all_wall_alone_modifiers(obj, element)
 
-        # Rebuild the Plan/Axis representation from new_directrix using
-        # IfcPolyline/IfcTrimmedCurve items so arcs render smoothly.
+        # Rebuild the Plan/Axis representation: item[0] is the raw directrix
+        # (for the edit workflow); remaining items are smooth-arc display items.
         axis_context = ifcopenshell.util.representation.get_context(
             ifc_file, "Plan", "Axis", "GRAPH_VIEW"
         )
         if not axis_context:
             return {"FINISHED"}
 
-        axis_items = _make_display_axis_items(ifc_file, new_directrix)
+        axis_items = [new_directrix] + _make_display_axis_items(ifc_file, new_directrix)
         new_axis_rep = ifc_file.createIfcShapeRepresentation(
             axis_context,
             axis_context.ContextIdentifier,
