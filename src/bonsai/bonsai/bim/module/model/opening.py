@@ -225,12 +225,16 @@ class FilledOpeningGenerator:
                 representation = tool.Geometry.get_representation_by_context(voided_element, context)
                 assert representation
 
+                is_wa = _is_wall_alone_element(voided_element)
                 bonsai.core.geometry.switch_representation(
                     tool.Ifc,
                     tool.Geometry,
                     obj=voided_obj,
                     representation=representation,
+                    apply_openings=not is_wa,
                 )
+                if is_wa:
+                    _setup_all_wall_alone_modifiers(voided_obj, voided_element)
 
     def regenerate_from_type(self, usecase_path: str, ifc_file: ifcopenshell.file, settings: dict[str, Any]) -> None:
         relating_type = settings["relating_type"]
@@ -356,12 +360,16 @@ class FilledOpeningGenerator:
             representation = tool.Geometry.get_active_representation(voided_obj)
             if not representation:
                 continue
+            is_wa = _is_wall_alone_element(voided_element)
             bonsai.core.geometry.switch_representation(
                 tool.Ifc,
                 tool.Geometry,
                 obj=voided_obj,
                 representation=representation,
+                apply_openings=not is_wa,
             )
+            if is_wa:
+                _setup_all_wall_alone_modifiers(voided_obj, voided_element)
 
     def get_opening_template_from_type(
         self, filling: ifcopenshell.entity_instance
@@ -554,12 +562,16 @@ class RecalculateFill(bpy.types.Operator, tool.Ifc.Operator):
                 if building_obj and building_obj.data:
                     representation = tool.Geometry.get_active_representation(building_obj)
                     if representation:
+                        is_wa = _is_wall_alone_element(building_element)
                         bonsai.core.geometry.switch_representation(
                             tool.Ifc,
                             tool.Geometry,
                             obj=building_obj,
                             representation=representation,
+                            apply_openings=not is_wa,
                         )
+                        if is_wa:
+                            _setup_all_wall_alone_modifiers(building_obj, building_element)
 
         # Refresh cut decorator
         DecoratorData.cut_cache.clear()
@@ -667,6 +679,55 @@ class AddBoolean(Operator, tool.Ifc.Operator):
         tool.Root.reload_item_decorator()
 
 
+def _is_wall_alone_element(element: ifcopenshell.entity_instance) -> bool:
+    """Return True if *element* is a WallAlone wall.
+
+    OCC boolean operations on IfcSurfaceCurveSweptAreaSolid are unreliable,
+    so openings on WallAlone walls must be applied via Blender boolean
+    modifiers instead of the geometry engine.
+    """
+    psets = ifcopenshell.util.element.get_psets(element)
+    return psets.get("EPset_Parametric", {}).get("Engine") == "Bonsai.WallAlone"
+
+
+def _ensure_wall_alone_modifier(
+    wall_obj: bpy.types.Object, opening_obj: bpy.types.Object
+) -> None:
+    """Add a Blender BOOLEAN modifier on *wall_obj* for *opening_obj* if absent."""
+    mod_name = f"Opening_{opening_obj.name}"
+    if mod_name not in wall_obj.modifiers:
+        mod = wall_obj.modifiers.new(name=mod_name, type="BOOLEAN")
+        mod.operation = "DIFFERENCE"
+        mod.object = opening_obj
+        mod.solver = "FLOAT"
+
+
+def _setup_all_wall_alone_modifiers(
+    wall_obj: bpy.types.Object,
+    wall_element: ifcopenshell.entity_instance,
+    hide: bool = True,
+) -> None:
+    """Re-add Blender boolean modifiers for every opening on a WallAlone wall.
+
+    Call after ``switch_representation`` which clears all modifiers.
+    If *hide* is True the opening objects are hidden (default for non-editing state).
+    """
+    openings = [rel.RelatedOpeningElement for rel in getattr(wall_element, "HasOpenings", [])]
+    if not openings:
+        return
+    to_load = [o for o in openings if not tool.Ifc.get_object(o)]
+    if to_load:
+        tool.Model.load_openings(to_load)
+    for opening_element in openings:
+        opening_obj = tool.Ifc.get_object(opening_element)
+        if not opening_obj:
+            continue
+        _ensure_wall_alone_modifier(wall_obj, opening_obj)
+        if hide:
+            opening_obj.hide_viewport = True
+            opening_obj.hide_render = True
+
+
 class ShowOpenings(Operator, tool.Ifc.Operator):
     bl_idname = "bim.show_openings"
     bl_label = "Show Openings"
@@ -690,7 +751,15 @@ class ShowOpenings(Operator, tool.Ifc.Operator):
         if tool.Ifc.is_moved(obj):
             bonsai.core.geometry.edit_object_placement(tool.Ifc, tool.Geometry, tool.Surveyor, obj=obj)
         openings_elements_to_load = [o for o in openings_elements if not tool.Ifc.get_object(o)]
-        openings_objects = tool.Model.load_openings(openings_elements_to_load)
+        tool.Model.load_openings(openings_elements_to_load)
+        is_wa = _is_wall_alone_element(element)
+        if is_wa:
+            # Reimport body WITHOUT OCC Boolean — Blender modifiers provide the voids.
+            body = ifcopenshell.util.representation.get_representation(element, "Model", "Body", "MODEL_VIEW")
+            if body:
+                bonsai.core.geometry.switch_representation(
+                    tool.Ifc, tool.Geometry, obj=obj, representation=body, apply_openings=False,
+                )
         for opening_element in openings_elements:
             opening_obj = tool.Ifc.get_object(opening_element)
             if not opening_obj:
@@ -698,6 +767,10 @@ class ShowOpenings(Operator, tool.Ifc.Operator):
             already_tracked = any(op.obj == opening_obj for op in tool.Model.get_model_props().openings)
             if not already_tracked:
                 tool.Root.add_tracked_opening(opening_obj, "OPENING")
+            if is_wa:
+                opening_obj.hide_viewport = False
+                opening_obj.hide_render = False
+                _ensure_wall_alone_modifier(obj, opening_obj)
 
 
 class UpdateOpeningsFocus(Operator):
@@ -758,6 +831,12 @@ def hide_openings(context: bpy.types.Context, objects: Sequence[bpy.types.Object
             if building_element:
                 building_obj = tool.Ifc.get_object(building_element)
                 if building_obj in objects:
+                    if _is_wall_alone_element(building_element):
+                        # Keep the opening object for the Blender boolean modifier.
+                        opening_obj.hide_viewport = True
+                        opening_obj.hide_render = True
+                        opening_prop.obj = None
+                        continue
                     tool.Ifc.unlink(element=opening_element)
                     objects_to_remove.add(opening_obj)
         if opening_obj in objects:
@@ -799,11 +878,12 @@ class EditOpenings(Operator, tool.Ifc.Operator):
 
     def _execute(self, context):
         building_objs, opening_elements = self.get_buildings_and_openings(context)
-        self.edit_openings(building_objs, opening_elements)
+        wa_skip = self.edit_openings(building_objs, opening_elements)
 
         tool.Model.purge_scene_openings()
-        if building_objs:
-            tool.Model.reload_body_representation(building_objs)
+        objs_to_reload = building_objs - wa_skip
+        if objs_to_reload:
+            tool.Model.reload_body_representation(objs_to_reload)
         bpy.ops.bim.update_openings_focus()
         return {"FINISHED"}
 
@@ -848,12 +928,22 @@ class EditOpenings(Operator, tool.Ifc.Operator):
 
     def edit_openings(
         self, building_objs: set[bpy.types.Object], opening_elements: set[ifcopenshell.entity_instance]
-    ) -> None:
-        """Process openings: save placement/representation changes and clean up Blender objects."""
+    ) -> set[bpy.types.Object]:
+        """Process openings and return WallAlone building objects to skip in body reload."""
         props = tool.Geometry.get_geometry_props()
         objects_to_remove: set[bpy.types.Object] = set()
+        wa_skip: set[bpy.types.Object] = set()
         for opening_element in opening_elements:
             opening_obj = tool.Ifc.get_object(opening_element)
+
+            # Detect WallAlone host.
+            is_wa = False
+            wa_building_obj = None
+            if opening_element.VoidsElements:
+                building_element = opening_element.VoidsElements[0].RelatingBuildingElement
+                is_wa = _is_wall_alone_element(building_element)
+                if is_wa:
+                    wa_building_obj = tool.Ifc.get_object(building_element)
 
             similar_openings = bonsai.core.geometry.get_similar_openings(tool.Ifc, opening_element)
             similar_openings_building_objs = bonsai.core.geometry.get_similar_openings_building_objs(
@@ -876,11 +966,26 @@ class EditOpenings(Operator, tool.Ifc.Operator):
                 building_objs.update(
                     self.get_all_building_objects_of_similar_openings(opening_element)
                 )
-                tool.Ifc.unlink(element=opening_element)
-                if props.representation_obj == opening_obj:
-                    props.representation_obj = None
-                objects_to_remove.add(opening_obj)
+
+                if is_wa and wa_building_obj:
+                    # Keep opening object alive for Blender boolean modifier.
+                    wa_skip.add(wa_building_obj)
+                    _ensure_wall_alone_modifier(wa_building_obj, opening_obj)
+                    opening_obj.hide_viewport = True
+                    opening_obj.hide_render = True
+                    # Untrack so next Alt+O calls show_openings.
+                    model_props = tool.Model.get_model_props()
+                    for i in range(len(model_props.openings) - 1, -1, -1):
+                        if model_props.openings[i].obj == opening_obj:
+                            model_props.openings.remove(i)
+                            break
+                else:
+                    tool.Ifc.unlink(element=opening_element)
+                    if props.representation_obj == opening_obj:
+                        props.representation_obj = None
+                    objects_to_remove.add(opening_obj)
         tool.Blender.remove_data_blocks(objects_to_remove, remove_unused_data=True)
+        return wa_skip
 
     def get_all_building_objects_of_similar_openings(self, opening):
         if not opening.is_a("IfcOpeningElement") or not opening.HasFillings:
@@ -942,12 +1047,16 @@ class CloneOpening(Operator, tool.Ifc.Operator):
                 continue
             representation = tool.Geometry.get_active_representation(obj)
             assert representation
+            is_wa = _is_wall_alone_element(element)
             bonsai.core.geometry.switch_representation(
                 tool.Ifc,
                 tool.Geometry,
                 obj=obj,
                 representation=representation,
+                apply_openings=not is_wa,
             )
+            if is_wa:
+                _setup_all_wall_alone_modifiers(obj, element)
 
         return {"FINISHED"}
 

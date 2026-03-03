@@ -596,7 +596,12 @@ def _disable_editing_wall_alone_axis(context: bpy.types.Context):
         tool.Geometry,
         obj=obj,
         representation=body,
+        apply_openings=False,
     )
+    # Re-add Blender boolean modifiers (switch_representation clears them).
+    from bonsai.bim.module.model.opening import _setup_all_wall_alone_modifiers
+
+    _setup_all_wall_alone_modifiers(obj, element)
     return {"FINISHED"}
 
 
@@ -737,7 +742,12 @@ class EditWallAloneAxis(bpy.types.Operator, tool.Ifc.Operator):
             tool.Geometry,
             obj=obj,
             representation=body,
+            apply_openings=False,
         )
+        # Re-add Blender boolean modifiers (switch_representation clears them).
+        from bonsai.bim.module.model.opening import _setup_all_wall_alone_modifiers
+
+        _setup_all_wall_alone_modifiers(obj, element)
 
         # Rebuild the Plan/Axis representation from new_directrix using
         # IfcPolyline/IfcTrimmedCurve items so arcs render smoothly.

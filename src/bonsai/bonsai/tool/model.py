@@ -1384,13 +1384,23 @@ class Model(bonsai.core.tool.Model):
                 continue
             element = tool.Ifc.get_entity(obj)
             body = ifcopenshell.util.representation.get_representation(element, "Model", "Body", "MODEL_VIEW")
+            is_wa = (
+                ifcopenshell.util.element.get_psets(element)
+                .get("EPset_Parametric", {})
+                .get("Engine")
+                == "Bonsai.WallAlone"
+            )
             bonsai.core.geometry.switch_representation(
                 tool.Ifc,
                 tool.Geometry,
                 obj=obj,
                 representation=body,
-                apply_openings=True,
+                apply_openings=not is_wa,
             )
+            if is_wa:
+                from bonsai.bim.module.model.opening import _setup_all_wall_alone_modifiers
+
+                _setup_all_wall_alone_modifiers(obj, element)
 
     @classmethod
     def is_parametric_roof_active(cls) -> bool:
@@ -1810,13 +1820,17 @@ class Model(bonsai.core.tool.Model):
             if not (obj := tool.Ifc.get_object(element)) or not (data := obj.data):
                 continue
             representation = tool.Ifc.get().by_id(tool.Geometry.get_mesh_props(data).ifc_definition_id)
+            is_wa = ifcopenshell.util.element.get_psets(element).get("EPset_Parametric", {}).get("Engine") == "Bonsai.WallAlone"
             bonsai.core.geometry.switch_representation(
                 tool.Ifc,
                 tool.Geometry,
                 obj=obj,
                 representation=representation,
-                apply_openings=True,
+                apply_openings=not is_wa,
             )
+            if is_wa:
+                from bonsai.bim.module.model.opening import _setup_all_wall_alone_modifiers
+                _setup_all_wall_alone_modifiers(obj, element)
 
     @classmethod
     def get_occurrences_without_material_override(
@@ -2727,7 +2741,12 @@ class Model(bonsai.core.tool.Model):
             tool.Geometry,
             obj=obj,
             representation=representation,
+            apply_openings=False,
         )
+        # switch_representation clears modifiers — re-add Blender booleans.
+        from bonsai.bim.module.model.opening import _setup_all_wall_alone_modifiers
+
+        _setup_all_wall_alone_modifiers(obj, element)
 
     @classmethod
     def recalculate_walls(cls, walls: list[bpy.types.Object]) -> None:

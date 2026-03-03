@@ -26,7 +26,11 @@ import bonsai.bim.handler
 import bonsai.core.geometry
 import bonsai.core.root
 import bonsai.tool as tool
-from bonsai.bim.module.model.opening import FilledOpeningGenerator
+from bonsai.bim.module.model.opening import (
+    FilledOpeningGenerator,
+    _is_wall_alone_element,
+    _setup_all_wall_alone_modifiers,
+)
 
 
 class AddOpening(bpy.types.Operator, tool.Ifc.Operator):
@@ -157,12 +161,17 @@ class AddOpening(bpy.types.Operator, tool.Ifc.Operator):
 
                     representation = tool.Geometry.get_active_representation(voided_obj)
                     assert representation
+                    voided_el = tool.Ifc.get_entity(voided_obj)
+                    is_wa = _is_wall_alone_element(voided_el) if voided_el else False
                     bonsai.core.geometry.switch_representation(
                         tool.Ifc,
                         tool.Geometry,
                         obj=voided_obj,
                         representation=representation,
+                        apply_openings=not is_wa,
                     )
+                    if is_wa:
+                        _setup_all_wall_alone_modifiers(voided_obj, voided_el)
                 tool.Geometry.lock_scale(voided_obj)
 
             if not has_visible_openings:
@@ -200,12 +209,16 @@ class RemoveOpening(bpy.types.Operator, tool.Ifc.Operator):
             if building_obj and building_obj.data:
                 representation = tool.Geometry.get_active_representation(building_obj)
                 assert representation
+                is_wa = _is_wall_alone_element(building_element)
                 bonsai.core.geometry.switch_representation(
                     tool.Ifc,
                     tool.Geometry,
                     obj=building_obj,
                     representation=representation,
+                    apply_openings=not is_wa,
                 )
+                if is_wa:
+                    _setup_all_wall_alone_modifiers(building_obj, building_element)
         tool.Geometry.unlock_scale_object_with_openings(obj)
         tool.Geometry.clear_cache(element)
         return {"FINISHED"}

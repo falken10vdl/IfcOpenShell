@@ -222,7 +222,8 @@ class AuthoringData:
             element = tool.Ifc.get_entity(active_object)
             if element and element.is_a("IfcElement") and not element.is_a("IfcOpeningElement"):
                 for opening in [r.RelatedOpeningElement for r in element.HasOpenings]:
-                    if tool.Ifc.get_object(opening):
+                    opening_obj = tool.Ifc.get_object(opening)
+                    if opening_obj and not opening_obj.hide_get():
                         return True
         return False
 

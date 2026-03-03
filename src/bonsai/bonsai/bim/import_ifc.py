@@ -288,6 +288,8 @@ class IfcImporter:
         self.profile_code("Create element types")
         self.place_objects_in_collections()
         self.profile_code("Place objects in collections")
+        self.setup_wall_alone_openings()
+        self.profile_code("Setup WallAlone openings")
         self.setup_arrays()
         self.update_linked_aggregates()
         self.profile_code("Setup arrays")
@@ -382,6 +384,19 @@ class IfcImporter:
             print("Warning! Excessive voids were found and skipped for the following elements:")
             for element in self.gross_elements:
                 print(f"{element} - {len(getattr(element, 'HasOpenings', []))} openings")
+
+        # WallAlone walls use IfcSurfaceCurveSweptAreaSolid which OCC cannot
+        # boolean-subtract reliably.  Import them without OCC booleans and
+        # apply voids via Blender boolean modifiers after import instead.
+        wall_alone_with_openings = {
+            e
+            for e in self.elements
+            if getattr(e, "HasOpenings", None)
+            and ifcopenshell.util.element.get_psets(e).get("EPset_Parametric", {}).get("Engine") == "Bonsai.WallAlone"
+        }
+        self.wall_alone_elements_with_openings = wall_alone_with_openings
+        self.gross_elements |= wall_alone_with_openings
+        self.elements -= wall_alone_with_openings
 
     def get_spatial_elements_filtered_by_elements(
         self, elements: set[ifcopenshell.entity_instance]
@@ -636,6 +651,20 @@ class IfcImporter:
     def create_elements(self) -> None:
         self.create_generic_elements(self.elements)
         self.create_generic_elements(self.gross_elements, is_gross=True)
+
+    def setup_wall_alone_openings(self) -> None:
+        """Attach Blender boolean modifiers for WallAlone walls imported without OCC booleans."""
+        from bonsai.bim.module.model.opening import _setup_all_wall_alone_modifiers
+
+        for element in getattr(self, "wall_alone_elements_with_openings", set()):
+            wall_obj = tool.Ifc.get_object(element)
+            if wall_obj is None:
+                continue
+            openings = [rel.RelatedOpeningElement for rel in element.HasOpenings]
+            to_load = [o for o in openings if not tool.Ifc.get_object(o)]
+            if to_load:
+                tool.Model.load_openings(to_load)
+            _setup_all_wall_alone_modifiers(wall_obj, element, hide=True)
 
     def create_generic_elements(self, elements: set[ifcopenshell.entity_instance], is_gross=False) -> None:
         if isinstance(self.file, ifcopenshell.sqlite):

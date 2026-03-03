@@ -1574,8 +1574,13 @@ class Hotkey(bpy.types.Operator, tool.Ifc.Operator):
                         Location=ifc_file.createIfcCartesianPoint([new_xdim / 2, 0.0])
                     )
                 bonsai.core.geometry.switch_representation(
-                    tool.Ifc, tool.Geometry, obj=obj, representation=representation
+                    tool.Ifc, tool.Geometry, obj=obj, representation=representation,
+                    apply_openings=False,
                 )
+                # Re-add Blender boolean modifiers (switch_representation clears them).
+                from bonsai.bim.module.model.opening import _setup_all_wall_alone_modifiers
+
+                _setup_all_wall_alone_modifiers(obj, element)
                 updated += 1
             if updated:
                 self.report({"INFO"}, f"Extended {updated} WallAlone object(s) to z: {cursor_z:.2f}m")
