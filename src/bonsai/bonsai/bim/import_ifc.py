@@ -654,7 +654,7 @@ class IfcImporter:
 
     def setup_wall_alone_openings(self) -> None:
         """Attach Blender boolean modifiers for WallAlone walls imported without OCC booleans."""
-        from bonsai.bim.module.model.opening import _setup_all_wall_alone_modifiers
+        from bonsai.bim.module.model.wall_alone import _setup_all_wall_alone_modifiers
 
         for element in getattr(self, "wall_alone_elements_with_openings", set()):
             wall_obj = tool.Ifc.get_object(element)

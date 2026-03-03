@@ -1578,7 +1578,7 @@ class Hotkey(bpy.types.Operator, tool.Ifc.Operator):
                     apply_openings=False,
                 )
                 # Re-add Blender boolean modifiers (switch_representation clears them).
-                from bonsai.bim.module.model.opening import _setup_all_wall_alone_modifiers
+                from bonsai.bim.module.model.wall_alone import _setup_all_wall_alone_modifiers
 
                 _setup_all_wall_alone_modifiers(obj, element)
                 updated += 1

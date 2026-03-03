@@ -26,11 +26,8 @@ import bonsai.bim.handler
 import bonsai.core.geometry
 import bonsai.core.root
 import bonsai.tool as tool
-from bonsai.bim.module.model.opening import (
-    FilledOpeningGenerator,
-    _is_wall_alone_element,
-    _setup_all_wall_alone_modifiers,
-)
+from bonsai.bim.module.model.opening import FilledOpeningGenerator
+from bonsai.bim.module.model.wall_alone import _is_wall_alone_element, _setup_all_wall_alone_modifiers
 
 
 class AddOpening(bpy.types.Operator, tool.Ifc.Operator):

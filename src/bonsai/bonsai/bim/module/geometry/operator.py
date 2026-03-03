@@ -2350,19 +2350,6 @@ class OverrideModeSetEdit(bpy.types.Operator, tool.Ifc.Operator):
             props = tool.Geometry.get_mesh_props(mesh)
             props.mesh_checksum = tool.Geometry.get_mesh_checksum(mesh)
             self.enable_edit_mode(context)
-        elif item.is_a("IfcSurfaceCurveSweptAreaSolid"):
-            tool.Geometry.sync_item_positions()
-            position = Matrix()
-            if item.Position:
-                si_conversion = ifcopenshell.util.unit.calculate_unit_scale(tool.Ifc.get())
-                position = Matrix(ifcopenshell.util.placement.get_axis2placement(item.Position).tolist())
-                position.translation *= si_conversion
-            tool.Model.import_curve(item.Directrix, obj=obj, position=position)
-            tool.Ifc.link(item, obj.data)
-            self.enable_edit_mode(context)
-            ProfileDecorator.install(context)
-            if not bpy.app.background:
-                tool.Blender.set_viewport_tool("bim.cad_tool")
         elif (
             item.is_a("IfcSweptAreaSolid")
             and (usage := tool.Model.get_usage_type(element))
@@ -2585,27 +2572,6 @@ class OverrideModeSetObject(bpy.types.Operator, tool.Ifc.Operator):
                 tool.Geometry.edit_meshlike_item(obj)
             else:
                 tool.Geometry.import_item(obj)
-        elif item.is_a("IfcSurfaceCurveSweptAreaSolid"):
-            ProfileDecorator.uninstall()
-            new_curves = tool.Model.export_curves(obj)
-            if not new_curves:
-
-                def msg(self, context):
-                    self.layout.label(text="INVALID AXIS PATH")
-
-                bpy.context.window_manager.popup_menu(msg, title="Error", icon="ERROR")
-                ProfileDecorator.install(bpy.context)
-                self.enable_edit_mode(bpy.context)
-                return
-
-            new_directrix = new_curves[0]
-            old_directrix = item.Directrix
-            item.Directrix = new_directrix
-            ifcopenshell.util.element.remove_deep2(tool.Ifc.get(), old_directrix)
-
-            tool.Ifc.link(new_directrix, obj.data)
-            tool.Geometry.reload_representation(props.representation_obj)
-            tool.Geometry.import_item(obj)
         elif item.is_a("IfcSweptAreaSolid"):
             ProfileDecorator.uninstall()
             if not (profile := tool.Model.export_profile(obj)):

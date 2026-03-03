@@ -1398,7 +1398,7 @@ class Model(bonsai.core.tool.Model):
                 apply_openings=not is_wa,
             )
             if is_wa:
-                from bonsai.bim.module.model.opening import _setup_all_wall_alone_modifiers
+                from bonsai.bim.module.model.wall_alone import _setup_all_wall_alone_modifiers
 
                 _setup_all_wall_alone_modifiers(obj, element)
 
@@ -1829,7 +1829,7 @@ class Model(bonsai.core.tool.Model):
                 apply_openings=not is_wa,
             )
             if is_wa:
-                from bonsai.bim.module.model.opening import _setup_all_wall_alone_modifiers
+                from bonsai.bim.module.model.wall_alone import _setup_all_wall_alone_modifiers
                 _setup_all_wall_alone_modifiers(obj, element)
 
     @classmethod
@@ -2744,7 +2744,7 @@ class Model(bonsai.core.tool.Model):
             apply_openings=False,
         )
         # switch_representation clears modifiers — re-add Blender booleans.
-        from bonsai.bim.module.model.opening import _setup_all_wall_alone_modifiers
+        from bonsai.bim.module.model.wall_alone import _setup_all_wall_alone_modifiers
 
         _setup_all_wall_alone_modifiers(obj, element)
 

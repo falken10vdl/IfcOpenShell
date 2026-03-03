@@ -86,6 +86,55 @@ from bonsai.bim.module.model.polyline import PolylineOperator
 WALL_ALONE_ENGINE = "Bonsai.WallAlone"
 
 
+def _is_wall_alone_element(element: ifcopenshell.entity_instance) -> bool:
+    """Return True if *element* is a WallAlone wall.
+
+    OCC boolean operations on IfcSurfaceCurveSweptAreaSolid are unreliable,
+    so openings on WallAlone walls must be applied via Blender boolean
+    modifiers instead of the geometry engine.
+    """
+    psets = ifcopenshell.util.element.get_psets(element)
+    return psets.get("EPset_Parametric", {}).get("Engine") == WALL_ALONE_ENGINE
+
+
+def _ensure_wall_alone_modifier(
+    wall_obj: bpy.types.Object, opening_obj: bpy.types.Object
+) -> None:
+    """Add a Blender BOOLEAN modifier on *wall_obj* for *opening_obj* if absent."""
+    mod_name = f"Opening_{opening_obj.name}"
+    if mod_name not in wall_obj.modifiers:
+        mod = wall_obj.modifiers.new(name=mod_name, type="BOOLEAN")
+        mod.operation = "DIFFERENCE"
+        mod.object = opening_obj
+        mod.solver = "FLOAT"
+
+
+def _setup_all_wall_alone_modifiers(
+    wall_obj: bpy.types.Object,
+    wall_element: ifcopenshell.entity_instance,
+    hide: bool = True,
+) -> None:
+    """Re-add Blender boolean modifiers for every opening on a WallAlone wall.
+
+    Call after ``switch_representation`` which clears all modifiers.
+    If *hide* is True the opening objects are hidden (default for non-editing state).
+    """
+    openings = [rel.RelatedOpeningElement for rel in getattr(wall_element, "HasOpenings", [])]
+    if not openings:
+        return
+    to_load = [o for o in openings if not tool.Ifc.get_object(o)]
+    if to_load:
+        tool.Model.load_openings(to_load)
+    for opening_element in openings:
+        opening_obj = tool.Ifc.get_object(opening_element)
+        if not opening_obj:
+            continue
+        _ensure_wall_alone_modifier(wall_obj, opening_obj)
+        if hide:
+            opening_obj.hide_viewport = True
+            opening_obj.hide_render = True
+
+
 # ---------------------------------------------------------------------------
 # Display helpers: convert IfcIndexedPolyCurve arcs to IfcTrimmedCurve/IfcCircle
 # ---------------------------------------------------------------------------
@@ -599,8 +648,6 @@ def _disable_editing_wall_alone_axis(context: bpy.types.Context):
         apply_openings=False,
     )
     # Re-add Blender boolean modifiers (switch_representation clears them).
-    from bonsai.bim.module.model.opening import _setup_all_wall_alone_modifiers
-
     _setup_all_wall_alone_modifiers(obj, element)
     return {"FINISHED"}
 
@@ -745,8 +792,6 @@ class EditWallAloneAxis(bpy.types.Operator, tool.Ifc.Operator):
             apply_openings=False,
         )
         # Re-add Blender boolean modifiers (switch_representation clears them).
-        from bonsai.bim.module.model.opening import _setup_all_wall_alone_modifiers
-
         _setup_all_wall_alone_modifiers(obj, element)
 
         # Rebuild the Plan/Axis representation from new_directrix using
