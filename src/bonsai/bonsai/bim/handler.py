@@ -21,6 +21,7 @@ import weakref
 from collections.abc import Callable
 from math import cos
 from typing import Union
+import json
 
 import bpy
 import ifcopenshell.api.owner.settings
@@ -353,6 +354,87 @@ def subscribe_to_viewport_shading_changes():
             )
 
 
+def _rehydrate_bexpeng_from_saved_bindings() -> None:
+    try:
+        import bexpeng
+    except Exception:
+        return
+
+    engine = bexpeng.get_engine()
+
+    pprops = tool.Project.get_project_props()
+    for json_prop in (
+        "material_set_item_expression_bindings_json",
+        "material_set_usage_expression_bindings_json",
+        "attribute_expression_bindings_json",
+    ):
+        raw = getattr(pprops, json_prop, "") or "{}"
+        try:
+            root = json.loads(raw)
+        except Exception:
+            continue
+        if not isinstance(root, dict):
+            continue
+        for element_bindings in root.values():
+            if not isinstance(element_bindings, dict):
+                continue
+            for attr_map in element_bindings.values():
+                if not isinstance(attr_map, dict):
+                    continue
+                for binding in attr_map.values():
+                    if not isinstance(binding, dict):
+                        continue
+                    param_name = (binding.get("shared_parameter_name") or "").strip()
+                    expression = (binding.get("shared_parameter_expression") or "").strip()
+                    if expression.startswith("="):
+                        expression = expression[1:].strip()
+                    if not param_name:
+                        continue
+                    try:
+                        if engine.get_expression(param_name) is None:
+                            engine.set_parameter(param_name, expression if expression else "0.0")
+                    except Exception:
+                        continue
+
+    # Also rehydrate plain prop bindings stored on parametric PropertyGroups.
+    prop_group_names = (
+        "BIMArrayProperties",
+        "BIMStairProperties",
+        "BIMWindowProperties",
+        "BIMDoorProperties",
+        "BIMRailingProperties",
+        "BIMRoofProperties",
+    )
+    for obj in bpy.data.objects:
+        for group_name in prop_group_names:
+            props = getattr(obj, group_name, None)
+            if props is None:
+                continue
+            raw = getattr(props, "bexpeng_bindings_json", "") or "{}"
+            if raw == "{}":
+                continue
+            try:
+                bindings = json.loads(raw)
+            except Exception:
+                continue
+            if not isinstance(bindings, dict):
+                continue
+            for binding in bindings.values():
+                if not isinstance(binding, dict):
+                    continue
+                param_name = (binding.get("param_name") or "").strip()
+                expression = (binding.get("expression") or "").strip()
+                if expression.startswith("="):
+                    expression = expression[1:].strip()
+                if not param_name:
+                    continue
+                try:
+                    if engine.get_expression(param_name) is None:
+                        engine.set_parameter(param_name, expression if expression else "0.0")
+                except Exception:
+                    continue
+
+
 @persistent
 def load_post(scene):
     global global_subscription_owner
@@ -366,10 +448,13 @@ def load_post(scene):
     AuthoringData.type_thumbnails = {}
 
     preferences = tool.Blender.get_addon_preferences()
+    suffix = getattr(preferences, "metadata_blend_file_suffix", ".ifc.metadata.blend")
+    filepath = bpy.data.filepath or ""
+    is_metadata_blend = bool(filepath and suffix and filepath.endswith(suffix))
     if not preferences.should_setup_toolbar:
         tool.Blender.unregister_toolbar()
 
-    if preferences.should_setup_workspace:
+    if preferences.should_setup_workspace and not is_metadata_blend:
         if "BIM" in bpy.data.workspaces:
             if preferences.activate_workspace:
                 bpy.context.window.workspace = bpy.data.workspaces["BIM"]
@@ -382,11 +467,12 @@ def load_post(scene):
     # To improve usability for new users, we hijack the scene properties
     # tab. We override default scene properties panels with our own poll
     # to hide them unless the user has chosen to view Blender properties.
-    for panel in tool.Blender.get_scene_panels_list():
-        if panel in bonsai.bim.original_scene_panels_polls:
-            continue
-        tool.Blender.override_scene_panel(panel)
-    tool.Blender.setup_tabs()
+    if not is_metadata_blend:
+        for panel in tool.Blender.get_scene_panels_list():
+            if panel in bonsai.bim.original_scene_panels_polls:
+                continue
+            tool.Blender.override_scene_panel(panel)
+        tool.Blender.setup_tabs()
 
     if tool.Ifc.get() and bpy.data.is_saved:
         props = tool.Blender.get_bim_props()
@@ -415,10 +501,15 @@ def load_post(scene):
     if model_props.show_bounding_box:
         BoundingBoxDecorator.install(bpy.context)
 
-    if preferences.should_use_snap and (scene := bpy.context.scene):
+    if preferences.should_use_snap and (scene := bpy.context.scene) and not is_metadata_blend:
         # Snapping is off by default in Blender, but in BIM, it's more useful to be on
         scene.tool_settings.use_snap = True
         # Match default Bonsai snaps
         scene.tool_settings.snap_elements_base = {"EDGE", "EDGE_PERPENDICULAR", "VERTEX", "EDGE_MIDPOINT", "FACE"}
 
-    tool.Blender.sync_old_preferences()
+    # Rehydrate BExpEng panel state after file load so expression data from
+    # persisted Bonsai bindings remains visible in the engine UI.
+    bpy.app.timers.register(_rehydrate_bexpeng_from_saved_bindings, first_interval=0.2)
+
+    if not is_metadata_blend:
+        tool.Blender.sync_old_preferences()
