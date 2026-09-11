@@ -137,7 +137,7 @@ class AddAnnotationType(bpy.types.Operator, tool.Ifc.Operator):
         element.ApplicableOccurrence = f"IfcAnnotation/{object_type}"
 
         if props.create_representation_for_type and object_type == "IMAGE":
-            bpy.ops.bim.add_reference_image("INVOKE_DEFAULT", existing_object_by_name=obj.name)
+            bpy.ops.bim.add_reference_image("INVOKE_DEFAULT")
 
 
 class EnableAddAnnotationType(bpy.types.Operator):
@@ -2105,7 +2105,7 @@ class AddAnnotation(bpy.types.Operator, tool.Ifc.Operator):
             enable_editing=True,
         )
         if props.object_type == "IMAGE":
-            bpy.ops.bim.add_reference_image("INVOKE_DEFAULT", existing_object_by_name=obj.name)
+            bpy.ops.bim.add_reference_image("INVOKE_DEFAULT")
 
 
 class AddDimensionTextAnnotation(bpy.types.Operator, tool.Ifc.Operator):
