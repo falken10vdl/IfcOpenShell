@@ -141,6 +141,12 @@ class AddDefaultType(bpy.types.Operator, tool.Ifc.Operator):
         elif ifc_element_type == "IfcPipeSegmentType":
             self.set_predefined_type(context, "RIGIDSEGMENT")
             props.representation_template = "FLOW_SEGMENT_CIRCULAR"
+        elif self.ifc_element_type == "IfcCableCarrierSegmentType":
+            props.ifc_predefined_type = "CABLETRAYSEGMENT"
+            props.representation_template = "FLOW_SEGMENT_U_SHAPE"
+        elif self.ifc_element_type == "IfcCableSegmentType":
+            props.ifc_predefined_type = "CABLESEGMENT"
+            props.representation_template = "FLOW_SEGMENT_CIRCULAR"
 
         elif ifc_element_type == "IfcStairFlightType":
             self.set_predefined_type(context, "STRAIGHT")
