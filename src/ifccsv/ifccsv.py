@@ -682,7 +682,7 @@ class IfcCsv:
             ifcopenshell.util.selector.set_element_value(ifc_file, element, key, value, concat=concat)
 
 
-if __name__ == "__main__":
+def _build_parser():
     parser = argparse.ArgumentParser(description="Exports IFC data to and from CSV")
     parser.add_argument("-i", "--ifc", type=str, required=True, help="The IFC file")
     parser.add_argument("-s", "--spreadsheet", type=str, default="data.csv", help="The spreadsheet file")
@@ -716,6 +716,11 @@ if __name__ == "__main__":
     )
     parser.add_argument("--export", action="store_true", help="Export from IFC to the desired format.")
     parser.add_argument("--import", action="store_true", help="Import from the autodetected format to IFC.")
+    return parser
+
+
+def main():
+    parser = _build_parser()
     args = parser.parse_args()
 
     if args.export:
@@ -755,3 +760,7 @@ if __name__ == "__main__":
             concat=args.concat,
         )
         ifc_file.write(args.ifc)
+
+
+if __name__ == "__main__":
+    main()
