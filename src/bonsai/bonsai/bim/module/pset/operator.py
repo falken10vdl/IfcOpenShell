@@ -582,4 +582,4 @@ class SavePsetAsTemplate(bpy.types.Operator, tool.PsetTemplate.PsetTemplateOpera
 
         template_file.write(IfcStore.pset_template_path)
         bonsai.bim.handler.refresh_ui_data()
-        bonsai.bim.schema.reload(ifc_file.schema)
+        bonsai.bim.schema.reload(ifc_file.schema_identifier)
