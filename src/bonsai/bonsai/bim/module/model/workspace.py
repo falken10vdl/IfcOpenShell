@@ -860,7 +860,12 @@ class EditObjectUI:
             )
             row = cls.layout.row(align=True) if ui_context != "TOOL_HEADER" else row
             add_layout_hotkey_operator(
-                row, "Trim", "S_T", "Connects and trims two non-parallel elements into a joint", ui_context
+                row,
+                "Trim",
+                "S_T",
+                "Connects and trims two non-parallel elements into a joint",
+                ui_context,
+                operator="bim.trim_wall",
             )
             row = cls.layout.row(align=True) if ui_context != "TOOL_HEADER" else row
             add_layout_hotkey_operator(row, "Unjoin Walls", "S_U", "", ui_context)
@@ -1387,21 +1392,13 @@ class Hotkey(bpy.types.Operator, tool.Ifc.Operator):
         if not bpy.context.selected_objects:
             return
         if self.active_material_usage == "LAYER2":
-            if len(bpy.context.selected_objects) != 2:
+            if bpy.ops.bim.merge_wall.poll():
+                bpy.ops.bim.merge_wall()
+            else:
                 self.report(
                     {"ERROR"},
                     "Exactly two LAYER2 items (walls, railings, etc) must be selected to perform a merge.",
                 )
-                return
-            for item in bpy.context.selected_objects:
-                element = tool.Ifc.get_entity(item)
-                if tool.Model.get_usage_type(element) != "LAYER2":
-                    self.report(
-                        {"ERROR"},
-                        "Both selected items must be LAYER2 (walls, railings, etc) to perform a merge.",
-                    )
-                    return
-            bpy.ops.bim.merge_wall()
         else:
             if len(bpy.context.selected_objects) == 1:
                 self.report(
@@ -1433,10 +1430,13 @@ class Hotkey(bpy.types.Operator, tool.Ifc.Operator):
         if not bpy.context.selected_objects:
             return
         if self.active_material_usage == "LAYER2":
-            try:
-                core.join_walls_LV(tool.Ifc, tool.Blender, tool.Geometry, DumbWallJoiner(), tool.Model)
-            except core.RequireTwoWallsError as e:
-                self.report({"ERROR"}, str(e))
+            if bpy.ops.bim.trim_wall.poll():
+                bpy.ops.bim.trim_wall()
+            else:
+                self.report(
+                    {"ERROR"},
+                    "Exactly two LAYER2 items (walls, railings, etc) must be selected to perform a trim.",
+                )
         elif self.active_material_usage == "PROFILE":
             bpy.ops.bim.extend_profile(join_type="L")
 
