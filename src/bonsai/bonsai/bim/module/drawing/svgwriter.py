@@ -45,6 +45,17 @@ import bonsai.tool as tool
 from bonsai.bim.module.drawing.data import DecoratorData, DrawingsData
 
 
+def strip_css_comments(css: str) -> str:
+    """Strip `/* ... */` comments from CSS text before it's embedded into an SVG.
+
+    Some SVG consumers (e.g. Inkscape, see
+    https://gitlab.com/inkscape/inbox/-/issues/11113) crash when parsing CSS
+    comments inside an embedded `<style>` block, so comments are removed
+    before the CSS is written out.
+    """
+    return re.sub(r"/\*.*?\*/", "", css, flags=re.DOTALL)
+
+
 class External(svgwrite.container.Group):
     # Parsed elements must use svgwrite's literal xmlns:prefix convention, or
     # ET.tostring() re-declares the namespace on top of svgwrite's own declaration.
@@ -304,7 +315,7 @@ class SvgWriter:
                 print(f"WARNING. Couldn't find stylesheet for the drawing by the path: {path}")
                 continue
             with open(path, "r") as stylesheet:
-                self.svg.defs.add(self.svg.style(stylesheet.read()))
+                self.svg.defs.add(self.svg.style(strip_css_comments(stylesheet.read())))
 
     def embed_fonts(self) -> None:
         """Embed Bonsai's bundled fonts as base64 encoded @font-face rules.
