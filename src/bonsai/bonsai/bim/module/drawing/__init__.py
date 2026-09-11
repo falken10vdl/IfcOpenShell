@@ -106,6 +106,7 @@ classes = (
     operator.SaveDrawingStylesData,
     operator.SelectAllDrawings,
     operator.SelectAllSheets,
+    operator.SelectAssignedAnnotations,
     operator.SelectAssignedProduct,
     operator.SelectSimilarTextLiteralValue,
     operator.ToggleTargetView,
@@ -184,6 +185,8 @@ def menu_func(self, context):
         element = tool.Ifc.get_entity(active_obj)
         if element and element.is_a("IfcAnnotation") and element.ObjectType in ["SECTION", "ELEVATION"]:
             self.layout.operator("bim.activate_drawing_by_annotation", text="Go to Drawing")
+        elif element and not element.is_a("IfcAnnotation") and tool.Drawing.get_assigned_annotations(element):
+            self.layout.operator("bim.select_assigned_annotations", text="Select Assigned Annotations")
 
 
 def register():
