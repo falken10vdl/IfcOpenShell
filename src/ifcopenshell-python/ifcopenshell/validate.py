@@ -23,13 +23,13 @@ Can be used to run validation on IFC file from the command line:
 
 .. code-block:: bash
 
-    python -m ifcopenshell.validate /path/to/model.ifc --rules
+    ifcopenshell-validate /path/to/model.ifc --rules
 
 .. code-block:: console
 
-    python -m ifcopenshell.validate -h
+    ifcopenshell-validate -h
 
-    usage: validate.py [-h] [--rules] [--json] [--fields] [--spf] files [files ...]
+    usage: ifcopenshell-validate [-h] [--rules] [--json] [--fields] [--spf] files [files ...]
 
     positional arguments:
       files       The IFC file to validate.
@@ -964,7 +964,7 @@ class LogDetectionHandler(Handler):
         self.default_handler.emit(record)
 
 
-if __name__ == "__main__":
+def main():
     import logging
     import sys
 
@@ -1045,3 +1045,7 @@ if __name__ == "__main__":
 
     if some_file_is_invalid:
         exit(1)
+
+
+if __name__ == "__main__":
+    main()
