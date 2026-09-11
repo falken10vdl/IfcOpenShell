@@ -2630,7 +2630,13 @@ class Model(bonsai.core.tool.Model):
                             loop_verts.append(edge.verts[0])
                             loop_verts.append(edge.verts[1])
                     else:
-                        loop_verts.append(edge.other_vert(loop_verts[-1]))
+                        next_vert = edge.other_vert(loop_verts[-1])
+                        if next_vert is None:
+                            # The edges do not form a continuous chain (e.g.
+                            # branching or degenerate geometry), so this
+                            # cannot be a profile loop (#8072).
+                            return (False, "UNCLOSED_LOOP")
+                        loop_verts.append(next_vert)
 
                 if is_closed := loop_verts[0] == loop_verts[-1]:
                     loop_verts.pop()
@@ -2886,7 +2892,13 @@ class Model(bonsai.core.tool.Model):
                             loop_verts.append(edge.verts[0])
                             loop_verts.append(edge.verts[1])
                     else:
-                        loop_verts.append(edge.other_vert(loop_verts[-1]))
+                        next_vert = edge.other_vert(loop_verts[-1])
+                        if next_vert is None:
+                            # The edges do not form a continuous chain (e.g.
+                            # branching or degenerate geometry), so this
+                            # cannot be a profile loop (#8072).
+                            return (False, "UNCLOSED_LOOP")
+                        loop_verts.append(next_vert)
 
                 if is_closed := loop_verts[0] == loop_verts[-1]:
                     loop_verts.pop()
