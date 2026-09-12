@@ -367,7 +367,7 @@ class FilledOpeningGenerator:
         ifcopenshell.api.geometry.edit_object_placement(
             tool.Ifc.get(),
             product=opening,
-            matrix=np.array(filling_obj.matrix_world),
+            matrix=tool.Surveyor.get_absolute_matrix(filling_obj),
             is_si=True,
         )
 
@@ -680,7 +680,7 @@ class RecalculateFill(bpy.types.Operator, tool.Ifc.Operator):
             for opening in openings:
                 bonsai.core.geometry.edit_object_placement(tool.Ifc, tool.Geometry, tool.Surveyor, obj=obj)
                 ifcopenshell.api.geometry.edit_object_placement(
-                    tool.Ifc.get(), product=opening, matrix=obj.matrix_world
+                    tool.Ifc.get(), product=opening, matrix=tool.Surveyor.get_absolute_matrix(obj)
                 )
 
             decomposed_building_elements = set()
