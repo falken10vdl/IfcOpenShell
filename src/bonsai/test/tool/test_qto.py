@@ -390,7 +390,7 @@ class TestGetBaseQto(test.bim.bootstrap.NewFile):
         wall_obj = bpy.data.objects.new("Object", bpy.data.meshes.new("Mesh"))
         tool.Ifc.link(wall, wall_obj)
         product = tool.Ifc.get_entity(wall_obj)
-        assert not subject.get_base_qto(product) == True
+        assert subject.get_base_qto(product) is None
 
     def test_ifc2x3_typed_product(self):
         # In IFC2X3, IsDefinedBy also carries IfcRelDefinesByType (no
