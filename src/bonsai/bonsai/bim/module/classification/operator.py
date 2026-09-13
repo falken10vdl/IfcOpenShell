@@ -79,6 +79,10 @@ class AddManualClassificationReference(bpy.types.Operator, tool.Ifc.Operator):
     obj_type: bpy.props.StringProperty()
 
     def _execute(self, context):
+        props = tool.Classification.get_classification_reference_props()
+        if not props.classifications:
+            self.report({"ERROR"}, "Add a classification before adding a manual reference to it.")
+            return
         if self.obj_type == "Object":
             if self.obj:
                 objects = [self.obj]
@@ -90,7 +94,6 @@ class AddManualClassificationReference(bpy.types.Operator, tool.Ifc.Operator):
                 objects = []
         else:
             objects = [self.obj]
-        props = tool.Classification.get_classification_reference_props()
         attributes = bonsai.bim.helper.export_attributes(props.reference_attributes)
         products = [
             tool.Ifc.get().by_id(ifc_definition_id)
