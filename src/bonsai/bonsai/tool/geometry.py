@@ -1430,6 +1430,7 @@ class Geometry(bonsai.core.tool.Geometry):
             or item.is_a("IfcCompositeCurve")
             or item.is_a("IfcIndexedPolyCurve")
             or item.is_a("IfcCircle")
+            or item.is_a("IfcGeometricCurveSet")
         )
 
     @classmethod
