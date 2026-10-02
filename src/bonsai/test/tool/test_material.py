@@ -62,6 +62,15 @@ class TestGetActiveMaterialType(NewFile):
         assert subject.get_active_material_type() == "IfcMaterialLayerSet"
 
 
+class TestSelectMaterialInMaterialsUI(NewFile):
+    def test_material_type_follows_the_selected_material_set(self):
+        bpy.ops.bim.create_project()
+        ifc = tool.Ifc.get()
+        layer_set = ifcopenshell.api.material.add_material_set(ifc, name="Set", set_type="IfcMaterialLayerSet")
+        bpy.ops.bim.material_ui_select(material_id=layer_set.id())
+        assert tool.Material.get_material_props().material_type == "IfcMaterialLayerSet"
+
+
 class TestGetElementsByMaterial(NewFile):
     def test_run(self):
         ifc = ifcopenshell.file()
