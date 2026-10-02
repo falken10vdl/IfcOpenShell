@@ -1401,6 +1401,7 @@ class SvgWriter:
                         radius,
                         precision=self.precision,
                         decimal_places=self.decimal_places,
+                        suppress_zero_feet=dimension_data["suppress_zero_feet"],
                         custom_unit=unit,
                     )
                     for unit in units_to_format
@@ -1533,6 +1534,7 @@ class SvgWriter:
                     text_format=lambda x: "D" + x,
                     show_description_only=dimension_data["show_description_only"],
                     suppress_zero_inches=dimension_data["suppress_zero_inches"],
+                    suppress_zero_feet=dimension_data["suppress_zero_feet"],
                     text_prefix=dimension_data["text_prefix"],
                     text_suffix=dimension_data["text_suffix"],
                     fill_bg=dimension_data["fill_bg"],
@@ -1560,6 +1562,7 @@ class SvgWriter:
                     dimension_text=dimension_text,
                     show_description_only=dimension_data["show_description_only"],
                     suppress_zero_inches=dimension_data["suppress_zero_inches"],
+                    suppress_zero_feet=dimension_data["suppress_zero_feet"],
                     text_prefix=dimension_data["text_prefix"],
                     text_suffix=dimension_data["text_suffix"],
                     fill_bg=dimension_data["fill_bg"],
@@ -1588,6 +1591,7 @@ class SvgWriter:
         text_format=lambda x: x,
         show_description_only=False,
         suppress_zero_inches=False,
+        suppress_zero_feet=False,
         text_prefix="",
         text_suffix="",
         fill_bg=False,
@@ -1628,6 +1632,7 @@ class SvgWriter:
                     precision=self.precision,
                     decimal_places=self.decimal_places,
                     suppress_zero_inches=suppress_zero_inches,
+                    suppress_zero_feet=suppress_zero_feet,
                     custom_unit=unit,
                 )
                 for unit in units_to_format
