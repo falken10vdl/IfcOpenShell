@@ -519,6 +519,7 @@ def _install_viewport_overlays() -> None:
     NestDecorator.uninstall()
     WallAxisDecorator.uninstall()
     SlabDirectionDecorator.uninstall()
+    BoundingBoxDecorator.uninstall()
     MEPSystemPathDecorator.uninstall()
     WallSystemPathDecorator.uninstall()
     WallFilletPreviewDecorator.uninstall()
