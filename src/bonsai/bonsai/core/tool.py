@@ -705,6 +705,7 @@ class Model:
     def has_underside_connection(cls, element): pass
     def get_manual_booleans(cls, element): pass
     def get_material_layer_parameters(cls, element): pass
+    def get_material_profile_set(cls, element): pass
     def get_slab_clipping_bmesh(cls, obj): pass
     def get_usage_type(cls, element): pass
     def get_local_horizontal_extents(cls, obj): pass
