@@ -24,6 +24,8 @@ import ifcopenshell
 import ifcopenshell.util.date
 import ifcopenshell.util.sequence
 
+from .common import validate_output_path
+
 
 def duration_to_hours(duration, hours_per_day, is_elapsed=False):
     """Convert an ifcopenshell.util.date.ifc2datetime() result to a float number of hours.
@@ -66,6 +68,7 @@ class Ifc2Msp:
         self.work_schedule = None
 
     def execute(self):
+        validate_output_path(self.xml, "MS Project .xml file")
         self.root = ET.Element("Project")
         self.root.attrib["xmlns"] = "http://schemas.microsoft.com/project"
 
