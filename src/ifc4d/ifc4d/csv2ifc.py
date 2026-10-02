@@ -35,6 +35,8 @@ import ifcopenshell.util.element
 import ifcopenshell.util.resource
 import isodate
 
+from .common import validate_input_path, validate_output_path
+
 SUPPORTED_COLUMN = Literal[
     "HIERARCHY",
     "TYPE",  # CREW, LABOR, EQUIPMENT, SUBCONTRACTOR, MATERIAL, PRODUCT.
@@ -99,6 +101,7 @@ class Csv2Ifc:
         self.units = {}  # TODO: never used
 
     def execute(self) -> None:
+        validate_input_path(self.csv, "resources .csv file")
         self.parse_csv()
         self.create_ifc()
 
@@ -325,6 +328,7 @@ class Ifc2Csv:
         self.inverse_resource_map = {value: key for key, value in RESOURCE_MAP.items()}
 
     def execute(self) -> None:
+        validate_output_path(self.filepath, "resources .csv file")
         with open(self.filepath, "w", newline="", encoding="utf-8") as f:
             writer = csv.writer(f)
             writer.writerow(self.HEADER)
