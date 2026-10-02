@@ -275,10 +275,14 @@ def format_distance(
 
         base = int(precision)
 
+        # Number of decimals for decimal imperial output (feet/inches). Honor
+        # the drawing's DecimalPlaces if set, otherwise keep the legacy default.
+        imperial_dp = decimal_places if decimal_places is not None else 3
+
         # Separate ft and inches
         # Unless Inches are the specified Length Unit or unit_fraction is False
         if unit_length == "FEET" and not unit_fraction:
-            feet = round(decInches / inPerFoot, 3)  # keep decimal
+            feet = round(decInches / inPerFoot, imperial_dp)  # keep decimal
             decInches = 0
         elif unit_length != "INCHES":
             feet = int(decInches / inPerFoot)  # remove decimal
@@ -330,10 +334,13 @@ def format_distance(
 
         # Check whether decimal or fractional
         if not unit_fraction:
-            inches = round(decInches, 3)
+            inches = round(decInches, imperial_dp)
             frac = None
         if not isArea:
             add_inches = bool(inches) or not suppress_zero_inches or (inches == 0 and frac)
+            # Decimal feet holds the entire value in `feet`; there is no separate inches part.
+            if unit_length == "FEET" and not unit_fraction:
+                add_inches = False
 
             tx_dist = ""
             if feet:
