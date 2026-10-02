@@ -773,7 +773,7 @@ class Spatial(bonsai.core.tool.Spatial):
 
     @classmethod
     def is_bounding_class(cls, visible_element: ifcopenshell.entity_instance) -> bool:
-        for ifc_class in ["IfcWall", "IfcColumn", "IfcMember", "IfcVirtualElement", "IfcPlate"]:
+        for ifc_class in ["IfcWall", "IfcColumn", "IfcMember", "IfcVirtualElement", "IfcPlate", "IfcCurtainWall"]:
             if visible_element.is_a(ifc_class):
                 return True
         # A window is only its own boundary when it isn't filling an opening
@@ -960,8 +960,10 @@ class Spatial(bonsai.core.tool.Spatial):
     def get_boundary_elements(cls, selected_objects: list[bpy.types.Object]) -> list[ifcopenshell.entity_instance]:
         boundary_elements = []
         for obj in selected_objects:
-            subelement = tool.Ifc.get_entity(obj)
-            if subelement.is_a("IfcWall") or subelement.is_a("IfcColumn"):
+            if not (subelement := tool.Ifc.get_entity(obj)):
+                continue
+            # Share is_bounding_class so curtain wall members and plates close a room boundary.
+            if cls.is_bounding_class(subelement):
                 boundary_elements.append(subelement)
             elif subelement.is_a("IfcWindow") and not cls.get_host_element(subelement):
                 boundary_elements.append(subelement)
