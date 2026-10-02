@@ -40,7 +40,7 @@ uv.lock
 .idea
 
 # Docs
-/docs/cpp-api/output
+/docs/output
 
 # gettext binary translation files
 *.mo
