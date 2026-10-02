@@ -2096,6 +2096,8 @@ class Model(bonsai.core.tool.Model):
         "TRIPLE_PANEL_VERTICAL",
     ]
 
+    WindowShape = Literal["RECTANGLE", "ROUND", "ARCH"]
+
     RoofGenerationMethod = Literal["HEIGHT", "ANGLE"]
 
     RailingType = Literal["FRAMELESS_PANEL", "WALL_MOUNTED_HANDRAIL"]
