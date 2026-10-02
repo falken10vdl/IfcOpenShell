@@ -1658,6 +1658,16 @@ def the_object_name_is_at_location(name, location):
     )
 
 
+@then(parsers.parse('the object "{name}" has an ifc location of "{location}"'))
+def the_object_name_has_an_ifc_location_of_value(name, location):
+    element = tool.Ifc.get_entity(the_object_name_exists(name))
+    unit_scale = ifcopenshell.util.unit.calculate_unit_scale(tool.Ifc.get())
+    ifc_location = Vector(ifcopenshell.util.placement.get_local_placement(element.ObjectPlacement)[:3, 3]) * unit_scale
+    assert (ifc_location - Vector([float(co) for co in location.split(",")])).length < 0.1, (
+        f"IFC placement is at {ifc_location}"
+    )
+
+
 @then(parsers.parse('the object "{name}" has a vertex at "{location}"'))
 def the_object_name_has_a_vertex_at_location(name, location):
     obj = the_object_name_exists(name)
