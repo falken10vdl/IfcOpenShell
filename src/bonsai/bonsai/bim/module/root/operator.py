@@ -725,6 +725,8 @@ class AddElement(bpy.types.Operator, tool.Ifc.Operator):
             ifcopenshell.api.pset.edit_pset(tool.Ifc.get(), pset=pset, properties={"LayerSetDirection": axis})
         elif representation_template == "PROFILESET" or representation_template.startswith("FLOW_SEGMENT_"):
             unit_scale = ifcopenshell.util.unit.calculate_unit_scale(tool.Ifc.get())
+            # Position is mandatory on these profile defs in IFC2X3 (optional in IFC4).
+            builder = ifcopenshell.util.shape_builder.ShapeBuilder(tool.Ifc.get())
             materials = tool.Ifc.get().by_type("IfcMaterial")
             if materials:
                 material = materials[0]  # Arbitrarily pick a material
@@ -740,6 +742,7 @@ class AddElement(bpy.types.Operator, tool.Ifc.Operator):
                             "IfcRectangleProfileDef",
                             ProfileName="New Profile",
                             ProfileType="AREA",
+                            Position=builder.create_axis2_placement_2d(),
                             XDim=size,
                             YDim=size,
                         )
@@ -756,6 +759,7 @@ class AddElement(bpy.types.Operator, tool.Ifc.Operator):
                         "IfcRectangleProfileDef",
                         ProfileName=profile_name,
                         ProfileType="AREA",
+                        Position=builder.create_axis2_placement_2d(),
                         XDim=default_x_dim / unit_scale,
                         YDim=default_y_dim / unit_scale,
                     )
@@ -772,6 +776,7 @@ class AddElement(bpy.types.Operator, tool.Ifc.Operator):
                         "IfcRectangleHollowProfileDef",
                         ProfileName=profile_name,
                         ProfileType="AREA",
+                        Position=builder.create_axis2_placement_2d(),
                         XDim=default_x_dim / unit_scale,
                         YDim=default_y_dim / unit_scale,
                         WallThickness=default_thickness / unit_scale,
@@ -786,6 +791,7 @@ class AddElement(bpy.types.Operator, tool.Ifc.Operator):
                         "IfcCircleProfileDef",
                         ProfileName=profile_name,
                         ProfileType="AREA",
+                        Position=builder.create_axis2_placement_2d(),
                         Radius=(default_diameter / 2) / unit_scale,
                     )
                 elif representation_template == "FLOW_SEGMENT_CIRCULAR_HOLLOW":
@@ -796,6 +802,7 @@ class AddElement(bpy.types.Operator, tool.Ifc.Operator):
                         "IfcCircleHollowProfileDef",
                         ProfileName=profile_name,
                         ProfileType="AREA",
+                        Position=builder.create_axis2_placement_2d(),
                         Radius=(default_diameter / 2) / unit_scale,
                         WallThickness=default_thickness,
                     )
@@ -809,6 +816,7 @@ class AddElement(bpy.types.Operator, tool.Ifc.Operator):
                         "IfcUShapeProfileDef",
                         ProfileName=profile_name,
                         ProfileType="AREA",
+                        Position=builder.create_axis2_placement_2d(),
                         Depth=default_depth / unit_scale,
                         FlangeWidth=default_flange_width / unit_scale,
                         WebThickness=default_web_thickness / unit_scale,
