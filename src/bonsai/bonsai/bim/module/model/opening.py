@@ -1014,6 +1014,16 @@ class FlipFill(bpy.types.Operator, tool.Ifc.Operator):
             filled_element = filled_opening.VoidsElements[0].RelatingBuildingElement
             filled_object = tool.Ifc.get_object(filled_element)
 
+            # Flip against the Body representation so a 2D representation cannot skew the pivot (#4332).
+            # The original representation is restored afterwards.
+            active_representation = tool.Geometry.get_active_representation(obj)
+            body_representation = tool.Geometry.get_body_representation(element)
+            restore_representation = None
+            if body_representation and active_representation != body_representation:
+                tool.Geometry.recut_host(obj, body_representation)
+                context.view_layer.update()
+                restore_representation = active_representation
+
             if filled_element.is_a() in ["IfcWall", "IfcWallStandardCase"]:
                 # if the filled element is a wall, move the filling in such a way
                 # that it will have the same relative position, but to the other
@@ -1048,6 +1058,10 @@ class FlipFill(bpy.types.Operator, tool.Ifc.Operator):
                 tool.Ifc.get(), filled_opening, tool.Surveyor.get_absolute_matrix(obj)
             )
             tool.Geometry.reload_representation(filled_object)
+
+            if restore_representation is not None:
+                tool.Geometry.recut_host(obj, restore_representation)
+                context.view_layer.update()
 
         return {"FINISHED"}
 
