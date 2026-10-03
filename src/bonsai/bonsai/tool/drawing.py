@@ -209,6 +209,17 @@ class Drawing(bonsai.core.tool.Drawing):
             co_end = co1 + vec * scaled_length
             obj = annotation.Annotator.add_line_to_annotation(obj, co_end, co1)
             obj.matrix_world = obj.matrix_world @ Matrix.Rotation(math.radians(-90), 4, "Z")
+        elif object_type == "SECTION_LEVEL":
+            co1, _, co3, _ = annotation.Annotator.get_placeholder_coords()
+            # co3 - co1 is the camera X direction (horizontal in a section view).
+            vec = co3 - co1
+            if vec.length == 0:
+                vec = Vector((1, 0, 0))
+            else:
+                vec = vec.normalized()
+            scaled_length = 0.023 * scale
+            co_end = co1 + vec * scaled_length
+            obj = annotation.Annotator.add_line_to_annotation(obj, co_end, co1)
         elif object_type != "TEXT":
             obj = annotation.Annotator.add_line_to_annotation(obj)
 
@@ -1632,7 +1643,12 @@ class Drawing(bonsai.core.tool.Drawing):
 
     @classmethod
     def is_auto_annotation(cls, element: ifcopenshell.entity_instance):
-        return element.is_a("IfcAnnotation") and element.ObjectType in ("GRID", "SECTION", "ELEVATION", "SECTION_LEVEL")
+        if not (element.is_a("IfcAnnotation") and element.ObjectType in ("GRID", "SECTION", "ELEVATION", "SECTION_LEVEL")):
+            return False
+        ptype = ifcopenshell.util.element.get_predefined_type(element)
+        if ptype in ("SECTION_LEVEL", "PLAN_LEVEL") and ifcopenshell.util.element.get_pset(element, "BBIM_Dimension"):
+            return False
+        return True
 
     @classmethod
     def get_drawing_reference_annotation(
