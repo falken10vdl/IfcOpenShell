@@ -1860,6 +1860,18 @@ def the_object_name_bottom_left_corner_is_at_location(name, location):
     )
 
 
+@then(parsers.parse('the object "{name}" filling opening is in sync'))
+def the_object_name_filling_opening_is_in_sync(name):
+    obj = the_object_name_exists(name)
+    opening = ifcopenshell.util.element.get_filled_void(tool.Ifc.get_entity(obj))
+    assert opening, f'Object "{name}" does not fill any opening'
+    unit_scale = ifcopenshell.util.unit.calculate_unit_scale(tool.Ifc.get())
+    placement = ifcopenshell.util.placement.get_local_placement(opening.ObjectPlacement)
+    opening_co = Vector(placement[:3, 3].tolist()) * unit_scale
+    delta = (opening_co - obj.matrix_world.translation).length
+    assert delta < 1e-4, f'Object "{name}"\'s opening drifted from its filling by {delta}'
+
+
 @then(parsers.parse('the object "{name}" is contained in "{container_name}"'))
 def the_object_name_is_contained_in_container_name(name, container_name):
     ifc = an_ifc_file_exists()
