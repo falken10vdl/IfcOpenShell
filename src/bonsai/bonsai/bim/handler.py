@@ -324,6 +324,7 @@ def loadIfcStore(scene: bpy.types.Scene) -> None:
     refresh_ui_data()
     if not tool.Ifc.get():
         tool.Autosave.cancel_timer()
+        tool.FileWatcher.cancel_timer()
         return
     tool.Ifc.schema()
     # Loader.unit_scale defaults to 1 and is otherwise only set when a project is
@@ -333,6 +334,7 @@ def loadIfcStore(scene: bpy.types.Scene) -> None:
     tool.Loader.set_unit_scale(ifcopenshell.util.unit.calculate_unit_scale(tool.Ifc.get()))
     IfcStore.relink_all_objects()
     tool.Autosave.reset_timer()
+    tool.FileWatcher.reset_timer()
 
 
 @persistent
