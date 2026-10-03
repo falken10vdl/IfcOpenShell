@@ -115,7 +115,11 @@ class IfcCsv:
             result = []
 
             for attribute in attributes:
-                value = ifcopenshell.util.selector.get_element_value(element, attribute)
+                if attribute == "GlobalId" and not hasattr(element, "GlobalId"):
+                    # Entities without a GlobalId (e.g. IfcMaterial) fall back to the STEP id.
+                    value = element.id()
+                else:
+                    value = ifcopenshell.util.selector.get_element_value(element, attribute)
                 if value is None:
                     value = null
                 elif value == "":
@@ -626,9 +630,17 @@ class IfcCsv:
 
         try:
             element = ifc_file.by_guid(row[0])
-        except:
-            print("The element with GUID {} was not found".format(row[0]))
-            return
+        except Exception:
+            element = None
+
+        if element is None:
+            # Export writes the STEP id for entities without a GlobalId.
+            try:
+                element = ifc_file.by_id(int(row[0]))
+            except Exception:
+                print("The element with GUID {} was not found".format(row[0]))
+                return
+
         for i, value in enumerate(row):
             if i == 0:
                 continue  # Skip GlobalId
