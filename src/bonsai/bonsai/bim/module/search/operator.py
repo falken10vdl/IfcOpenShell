@@ -38,6 +38,15 @@ from natsort import natsorted
 
 import bonsai.core.search as core
 import bonsai.tool as tool
+from bonsai.bim.helper import (
+    SELECT_FILTER_TOOLTIP,
+    SELECT_REMOVE_TOOLTIP,
+    SELECT_UNHIDE_TOOLTIP,
+    RegexSelectMixin,
+    decode_select_click,
+    select_regex_tooltip,
+    selection_mode,
+)
 from bonsai.bim.ifc import IfcStore
 from bonsai.bim.prop import StrProperty
 
@@ -1269,26 +1278,40 @@ class SelectGlobalId(Operator):
 
 
 class SelectIfcClass(Operator):
-    """Click to select all objects that match with the given IFC class\nSHIFT + Click to also match Predefined Type"""
-
     bl_idname = "bim.select_ifc_class"
     bl_label = "Select IFC Class"
+    bl_description = (
+        "Click to select all objects that match with the given IFC class"
+        + f"\n{SELECT_REMOVE_TOOLTIP}"
+        + f"\n{SELECT_FILTER_TOOLTIP}"
+        + f"\n{SELECT_UNHIDE_TOOLTIP}"
+    )
     bl_options = {"REGISTER", "UNDO"}
     should_filter_predefined_type: BoolProperty(default=False)
+    should_unhide: BoolProperty(default=False)
+    remove_from_selection: BoolProperty(default=False, options={"SKIP_SAVE"})
+    filter_selection: BoolProperty(default=False, options={"SKIP_SAVE"})
 
     def invoke(self, context, event):
-        self.should_filter_predefined_type = event.shift
+        mods = decode_select_click(event)
+        self.remove_from_selection = mods.remove
+        self.filter_selection = mods.filter
+        self.should_unhide = mods.unhide
         return self.execute(context)
 
     def execute(self, context):
-        objects = context.selected_objects
+        if self.remove_from_selection or self.filter_selection:
+            objects = [context.active_object] if context.active_object else []
+        else:
+            objects = context.selected_objects
         classes = set()
         predefined_types = set()
         for obj in objects:
             if element := tool.Ifc.get_entity(obj):
                 classes.add(element.is_a())
                 predefined_types.add(ifcopenshell.util.element.get_predefined_type(element))
-        result = ""
+
+        elements = []
         for cls in classes:
             for element in tool.Ifc.get().by_type(cls):
                 if (
@@ -1296,16 +1319,17 @@ class SelectIfcClass(Operator):
                     and ifcopenshell.util.element.get_predefined_type(element) not in predefined_types
                 ):
                     continue
-                if obj := tool.Ifc.get_object(element):
-                    tool.Blender.select_object(obj)
+                elements.append(element)
+        tool.Spatial.select_products(
+            elements,
+            unhide=self.should_unhide,
+            mode=selection_mode(self.remove_from_selection, self.filter_selection),
+        )
 
-            # copy selection query to clipboard
-            if not result:
-                result = f"{cls}"
-            else:
-                result += f", {cls}"
-            bpy.context.window_manager.clipboard = result
-            self.report({"INFO"}, f"({result}) was copied to the clipboard.")
+        # copy selection query to clipboard
+        result = " + ".join(classes)
+        bpy.context.window_manager.clipboard = result
+        self.report({"INFO"}, f"({result}) was copied to the clipboard.")
 
         return {"FINISHED"}
 
@@ -1445,7 +1469,7 @@ class ShowAllElements(Operator):
         return {"FINISHED"}
 
 
-class SelectSimilar(Operator):
+class SelectSimilar(RegexSelectMixin, Operator):
     bl_idname = "bim.select_similar"
     bl_label = "Select Similar"
     bl_options = {"REGISTER", "UNDO"}
@@ -1456,10 +1480,18 @@ class SelectSimilar(Operator):
     )
     calculated_sum: bpy.props.FloatProperty(name="Calculated Sum", default=0.0)
     remove_from_selection: bpy.props.BoolProperty(default=False, options={"SKIP_SAVE"})
+    should_unhide: bpy.props.BoolProperty(default=False, options={"SKIP_SAVE"})
+    filter_selection: bpy.props.BoolProperty(default=False, options={"SKIP_SAVE"})
 
     @classmethod
     def description(cls, context, properties):
-        base = "Select objects with a similar value\n\nSHIFT+CLICK remove from selection set."
+        base = (
+            "Select objects with a similar value"
+            + f"\n\n{SELECT_REMOVE_TOOLTIP}"
+            + f"\n{SELECT_FILTER_TOOLTIP}"
+            + f"\n{select_regex_tooltip()}"
+            + f"\n{SELECT_UNHIDE_TOOLTIP}"
+        )
 
         key = getattr(properties, "key", None)
         active = context.active_object
@@ -1472,7 +1504,7 @@ class SelectSimilar(Operator):
 
         value = ifcopenshell.util.selector.get_element_value(element, key)
         if isinstance(value, (int, float)):
-            return base + ("\nCTRL+CLICK display the sum of all selected objects")
+            return base + ("\nCTRL+SHIFT+Click to display the sum of all selected objects")
         else:
             return base
 
@@ -1484,9 +1516,33 @@ class SelectSimilar(Operator):
         return False
 
     def invoke(self, context, event):
-        self.calculate_sum = event.ctrl and event.type == "LEFTMOUSE"
-        self.remove_from_selection = event.shift and event.type == "LEFTMOUSE"
+        mods = decode_select_click(event)
+        if mods.regex_dialog:
+            return self.invoke_regex_dialog(context)
+        self.calculate_sum = mods.legacy
+        self.remove_from_selection = mods.remove
+        self.filter_selection = mods.filter
+        self.should_unhide = mods.unhide
         return self.execute(context)
+
+    def get_regex_prefill(self, context):
+        if not context.active_object:
+            return None
+        key = "predefined_type" if self.key == "PredefinedType" else self.key
+        value = self._get_value(context.active_object, key)
+        return None if value is None else str(value)
+
+    def get_regex_clipboard_key(self):
+        return self.key
+
+    def apply_regex(self, context, pattern):
+        key = "predefined_type" if self.key == "PredefinedType" else self.key
+
+        def get_value(obj):
+            value = self._get_value(obj, key)
+            return None if value is None else str(value)
+
+        return self.apply_regex_by_value(context, pattern, get_value)
 
     def execute(self, context):
         self.calculated_sum = 0  # reset if run before
@@ -1494,6 +1550,9 @@ class SelectSimilar(Operator):
         prefs = tool.Blender.get_addon_preferences()
         tolerance = prefs.doc.tolerance
         formatted_tolerance = f"{tolerance:.{max(0, -int(f'{tolerance:.1e}'.split('e')[-1])) if tolerance < 1 else 1}f}"
+
+        if self.use_regex:
+            return self.execute_regex(context)
 
         if self.calculate_sum:
             self._calculate_sum(context, key)
@@ -1504,7 +1563,12 @@ class SelectSimilar(Operator):
                 return {"CANCELLED"}
 
             matched_count = self._select_objects(context, key, reference_values, tolerance)
-            verb = "Deselected" if self.remove_from_selection else "Selected"
+            if self.filter_selection:
+                verb = "Filtered selection to"
+            elif self.remove_from_selection:
+                verb = "Deselected"
+            else:
+                verb = "Selected"
 
             if all(isinstance(v, (int, float)) for v in reference_values):
                 self.report(
@@ -1517,7 +1581,7 @@ class SelectSimilar(Operator):
                     f"{verb} all objects that share the same ({self.key}) value(s) from {len(reference_values)} reference object(s).",
                 )
 
-            self._generate_clipboard_query(reference_values[0] if reference_values else None, key)
+            self._generate_clipboard_query(reference_values, key)
 
         return {"FINISHED"}
 
@@ -1530,7 +1594,7 @@ class SelectSimilar(Operator):
     def _get_reference_values(self, context, key):
         objects = (
             [context.active_object]
-            if self.remove_from_selection
+            if self.remove_from_selection or self.filter_selection
             else (context.selected_objects or [context.active_object])
         )
         values = [self._get_value(obj, key) for obj in objects]
@@ -1543,11 +1607,26 @@ class SelectSimilar(Operator):
 
     def _select_objects(self, context, key, reference_values, tolerance):
         count = 0
-        for obj in context.visible_objects:
+        if self.filter_selection:
+            # Keep only the already selected objects that match, select nothing new.
+            for obj in context.selected_objects:
+                obj_value = self._get_value(obj, key)
+                if obj_value is not None and any(
+                    self._compare_values(obj_value, ref_value, tolerance) for ref_value in reference_values
+                ):
+                    count += 1
+                else:
+                    obj.select_set(False)
+            return count
+        objects = context.scene.objects if self.should_unhide else context.visible_objects
+        for obj in objects:
             obj_value = self._get_value(obj, key)
             if obj_value is None:
                 continue
             if any(self._compare_values(obj_value, ref_value, tolerance) for ref_value in reference_values):
+                if self.should_unhide:
+                    obj.hide_viewport = False
+                    obj.hide_set(False)
                 obj.select_set(not self.remove_from_selection)
                 count += 1
         return count
@@ -1562,17 +1641,22 @@ class SelectSimilar(Operator):
         bpy.context.window_manager.clipboard = str(total)
         self.report({"INFO"}, f"({total}) was copied to the clipboard.")
 
-    def _generate_clipboard_query(self, value, key):
+    def _generate_clipboard_query(self, values, key):
         key = "PredefinedType" if key == "predefined_type" else key
-        if value is True:
-            value = "TRUE"
-        elif value is False:
-            value = "FALSE"
+        if not values:
+            return
 
-        if isinstance(value, list) and value:
-            result = ", ".join(f'{key} = "{item}"' for item in value)
-        else:
-            result = f'{key} = "{value}"'
+        def format_value(value):
+            if value is True:
+                return f'{key} = "TRUE"'
+            elif value is False:
+                return f'{key} = "FALSE"'
+            elif isinstance(value, list) and value:
+                return ", ".join(f'{key} = "{item}"' for item in value)
+            else:
+                return f'{key} = "{value}"'
+
+        result = " + ".join(format_value(v) for v in values)
 
         bpy.context.window_manager.clipboard = result
         self.report({"INFO"}, f"({result}) was copied to the clipboard.")
