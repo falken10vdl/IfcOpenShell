@@ -496,6 +496,7 @@ class Usecase:
                 library=self.settings["library"],
                 element=element_type,
                 reuse_identities=self.reuse_identities,
+                assume_asset_uniqueness_by_name=self.assume_asset_uniqueness_by_name,
             )
             # `new_type` may resolve to a pre-existing element reused by
             # GlobalId (see `get_existing_element`, which reuses any IfcRoot by
