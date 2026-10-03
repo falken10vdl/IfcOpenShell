@@ -137,8 +137,9 @@ class IfcCsv:
             else:
                 self.headers.append(attribute)
 
-        self.group_results(groups, attributes)
+        # Summarise before grouping so totals cover every exported element.
         self.summarise_results(summaries, attributes)
+        self.group_results(groups, attributes)
         self.sort_results(sort, attributes, include_global_id)
         self.format_results(formatting, attributes, null)
         self.split_groups = self.split_results(split_by, attributes)
