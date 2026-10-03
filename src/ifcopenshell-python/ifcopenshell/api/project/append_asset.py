@@ -160,6 +160,7 @@ class SafeRemovalContext:
 
     file: ifcopenshell.file
     reuse_identities: dict[int, ifcopenshell.entity_instance]
+    new_reuse_identities: dict[int, int]
 
     assume_asset_uniqueness_by_name: bool
     """If `False`, then all job is done by `file.add`
@@ -170,10 +171,14 @@ class SafeRemovalContext:
         ifc_file: ifcopenshell.file,
         reuse_identities: dict[int, ifcopenshell.entity_instance],
         assume_asset_uniqueness_by_name: bool,
+        new_reuse_identities: Optional[dict[int, int]] = None,
     ):
         self.file = ifc_file
         self.reuse_identities = reuse_identities
         self.assume_asset_uniqueness_by_name = assume_asset_uniqueness_by_name
+        # Reverse index (new element id -> identity) of entries added during this call,
+        # so __exit__ finds a removed element's identity without scanning `reuse_identities`.
+        self.new_reuse_identities = {} if new_reuse_identities is None else new_reuse_identities
 
     def __enter__(self):
         if not self.assume_asset_uniqueness_by_name:
@@ -189,9 +194,18 @@ class SafeRemovalContext:
         removed_identities: dict[ifcopenshell.entity_instance, int] = {}
         assert self.file.to_delete is not None
         removed_elements = self.file.to_delete
-        for identity, element in self.reuse_identities.items():
-            if element in removed_elements:
+        unresolved_elements: list[ifcopenshell.entity_instance] = []
+        for element in removed_elements:
+            identity = self.new_reuse_identities.pop(element.id(), None)
+            if identity is None:
+                unresolved_elements.append(element)
+            else:
                 removed_identities[element] = identity
+        if unresolved_elements:
+            unresolved_set = set(unresolved_elements)
+            for identity, element in self.reuse_identities.items():
+                if element in unresolved_set:
+                    removed_identities[element] = identity
         assert len(removed_identities) == len(removed_elements)
 
         # Actually remove elements.
@@ -217,10 +231,15 @@ class Usecase:
     reuse_identities: dict[int, ifcopenshell.entity_instance]
     """Mapping of old element ids to new elements, usually fiiled by ``file_add``."""
 
+    new_reuse_identities: dict[int, int]
+    """Reverse index (new element id -> identity) of ``reuse_identities`` entries
+    added during this call. See ``SafeRemovalContext``."""
+
     def execute(self):
         # mapping of old element ids to new elements
         self.added_elements: dict[int, ifcopenshell.entity_instance] = {}
         self.reuse_identities: dict[int, ifcopenshell.entity_instance] = self.settings["reuse_identities"]
+        self.new_reuse_identities: dict[int, int] = {}
         self.whitelisted_inverse_attributes = {}
         self.base_material_class = "IfcMaterial" if self.file.schema == "IFC2X3" else "IfcMaterialDefinition"
         self.assume_asset_uniqueness_by_name = self.settings["assume_asset_uniqueness_by_name"]
@@ -450,7 +469,9 @@ class Usecase:
             matrix = ifcopenshell.util.placement.get_local_placement(placement)
             matrix = ifcopenshell.util.geolocation.auto_local2global(self.settings["library"], matrix)
             matrix = ifcopenshell.util.geolocation.auto_global2local(self.file, matrix)
-            with SafeRemovalContext(self.file, self.reuse_identities, self.assume_asset_uniqueness_by_name):
+            with SafeRemovalContext(
+                self.file, self.reuse_identities, self.assume_asset_uniqueness_by_name, self.new_reuse_identities
+            ):
                 ifcopenshell.api.geometry.edit_object_placement(self.file, element, matrix, is_si=False)
 
         element_type = ifcopenshell.util.element.get_type(self.settings["element"])
@@ -562,7 +583,7 @@ class Usecase:
             new = existing_rel
         else:
             new = self.file.create_entity(element.is_a())
-            self.reuse_identities[element_identity] = new
+            self.map_reuse_identity(element_identity, new)
 
         for i, attribute in enumerate(element):
             new_attribute = None
@@ -639,7 +660,9 @@ class Usecase:
             for inverse in self.file.get_inverse(added_context):
                 ifcopenshell.util.element.replace_attribute(inverse, added_context, equivalent_existing_context)
 
-        with SafeRemovalContext(self.file, self.reuse_identities, self.assume_asset_uniqueness_by_name):
+        with SafeRemovalContext(
+            self.file, self.reuse_identities, self.assume_asset_uniqueness_by_name, self.new_reuse_identities
+        ):
             for added_context in added_contexts:
                 ifcopenshell.util.element.remove_deep2(self.file, added_context)
 
@@ -683,6 +706,16 @@ class Usecase:
             )
         self.existing_contexts.append(context)
         return context
+
+    def map_reuse_identity(self, identity: int, new: ifcopenshell.entity_instance) -> ifcopenshell.entity_instance:
+        """Record ``identity -> new`` in ``reuse_identities`` and index it by
+        ``new``'s id in ``new_reuse_identities`` so ``SafeRemovalContext`` can
+        find a removed element's identity directly. All writes to
+        ``reuse_identities`` must go through this method to keep the index
+        in sync."""
+        self.reuse_identities[identity] = new
+        self.new_reuse_identities[new.id()] = identity
+        return new
 
     def file_add(
         self, element: ifcopenshell.entity_instance, conversion_factor: Optional[float] = None
@@ -744,7 +777,7 @@ class Usecase:
                     (e for e in ifc_file.by_type(ifc_class) if getattr(e, attr_name) == subelement_id), None
                 )
                 if existing_org is not None:
-                    reuse_identities[element_identity] = existing_org
+                    self.map_reuse_identity(element_identity, existing_org)
                     return existing_org
 
         # Check if element already exists.
@@ -758,7 +791,7 @@ class Usecase:
                     (e for e in ifc_file.by_type("IfcProfileDef") if e.ProfileName == profile_name), None
                 )
                 if existing_profile is not None:
-                    reuse_identities[element_identity] = existing_profile
+                    self.map_reuse_identity(element_identity, existing_profile)
                     return existing_profile
 
         elif element.is_a("IfcMaterial"):
@@ -769,7 +802,7 @@ class Usecase:
                 else None
             )
             if existing_material is not None:
-                reuse_identities[element_identity] = existing_material
+                self.map_reuse_identity(element_identity, existing_material)
                 return existing_material
 
         elif ifc_class in MATERIAL_SETS:
@@ -779,7 +812,7 @@ class Usecase:
                 for candidate in ifc_file.by_type(ifc_class):
                     if getattr(candidate, name_attr) == material_set_name:
                         if self.material_sets_are_equal(element, candidate):
-                            reuse_identities[element_identity] = candidate
+                            self.map_reuse_identity(element_identity, candidate)
                             return candidate
 
         elif element.is_a("IfcPresentationStyle"):
@@ -787,7 +820,7 @@ class Usecase:
             if is_reusable_name(style_name):
                 existing_style = next((e for e in ifc_file.by_type(ifc_class) if e.Name == style_name), None)
                 if existing_style is not None:
-                    reuse_identities[element_identity] = existing_style
+                    self.map_reuse_identity(element_identity, existing_style)
                     return existing_style
 
         elif ifc_class == "IfcApplication":
@@ -797,19 +830,19 @@ class Usecase:
                     (e for e in ifc_file.by_type("IfcApplication") if e.ApplicationIdentifier == app_id), None
                 )
                 if existing_app is not None:
-                    reuse_identities[element_identity] = existing_app
+                    self.map_reuse_identity(element_identity, existing_app)
                     return existing_app
 
         elif ifc_class == "IfcOrganization":
             existing_org = get_existing_element_(element)
             if existing_org is not None:
-                reuse_identities[element_identity] = existing_org
+                self.map_reuse_identity(element_identity, existing_org)
                 return existing_org
 
         elif ifc_class == "IfcPerson":
             existing_person = get_existing_element_(element)
             if existing_person is not None:
-                reuse_identities[element_identity] = existing_person
+                self.map_reuse_identity(element_identity, existing_person)
                 return existing_person
 
         elif ifc_class == "IfcPersonAndOrganization":
@@ -818,7 +851,7 @@ class Usecase:
             ):
                 for pao in ifc_file.by_type("IfcPersonAndOrganization"):
                     if pao.ThePerson == person and pao.TheOrganization == org:
-                        reuse_identities[element_identity] = pao
+                        self.map_reuse_identity(element_identity, pao)
                         return pao
 
         attrs: dict[int, Any] = {}
@@ -870,7 +903,7 @@ class Usecase:
 
         # Adding entity at the end just to keep it consistent with `file.add`.
         new = ifc_file.create_entity(ifc_class)
-        reuse_identities[element_identity] = new
+        self.map_reuse_identity(element_identity, new)
         for attr_index, attr_value in attrs.items():
             new[attr_index] = attr_value
 
