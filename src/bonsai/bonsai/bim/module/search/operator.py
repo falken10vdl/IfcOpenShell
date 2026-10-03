@@ -657,6 +657,7 @@ class ApplyFilterFromText(Operator):
             filter_structure = json_data.get("filter_structure", [])
             filter_groups = tool.Search.get_filter_groups(module)
             tool.Search.import_filter_structure(filter_structure, filter_groups)
+            tool.Search.on_filter_query_edited(module, context)
             self.report({"INFO"}, "Filter configuration applied successfully")
 
             if len(context.window_manager.windows) > 1:
@@ -690,6 +691,7 @@ class EditFilterQuery(Operator, tool.Ifc.Operator):
                 tool.Search.import_filter_query(self.query, filter_groups)
             except:
                 return
+            tool.Search.on_filter_query_edited(module, context)
 
     def draw(self, context):
 
