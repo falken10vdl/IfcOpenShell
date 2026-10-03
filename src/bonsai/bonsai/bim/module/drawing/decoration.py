@@ -333,6 +333,9 @@ class BaseDecorator:
         indices = []
         topology = []
 
+        if not obj.data or not hasattr(obj.data, "splines"):
+            return vertices, indices, topology
+
         idx = 0
         for spline in obj.data.splines:
             spline_points = spline.bezier_points if spline.bezier_points else spline.points
@@ -1055,6 +1058,8 @@ class LeaderDecorator(BaseDecorator):
     objecttype = "TEXT_LEADER"
 
     def get_spline_end(self, obj):
+        if not obj.data or not hasattr(obj.data, "splines") or not obj.data.splines:
+            return Vector((0, 0, 0))
         spline = obj.data.splines[0]
         spline_points = spline.bezier_points if spline.bezier_points else spline.points
         if not spline_points:
@@ -1074,6 +1079,8 @@ class RadiusDecorator(BaseDecorator):
     objecttype = "RADIUS"
 
     def get_spline_points(self, obj):
+        if not obj.data or not hasattr(obj.data, "splines") or not obj.data.splines:
+            return [Vector((0, 0, 0)), Vector((0, 0, 0))]
         spline = obj.data.splines[0]
         spline_points = spline.bezier_points if spline.bezier_points else spline.points
         if not spline_points:
@@ -1134,6 +1141,8 @@ class FallDecorator(BaseDecorator):
         if not (pos := location_3d_to_region_2d(region, region3d, self.get_spline_end(obj))):
             return
 
+        if not obj.data or not hasattr(obj.data, "splines") or not obj.data.splines:
+            return
         spline = obj.data.splines[0]
         spline_points = spline.bezier_points if spline.bezier_points else spline.points
 
@@ -1174,6 +1183,8 @@ class FallDecorator(BaseDecorator):
             self.draw_label(context, text, pos, dir, gap=0, center=False, vcenter=False)
 
     def get_spline_end(self, obj):
+        if not obj.data or not hasattr(obj.data, "splines") or not obj.data.splines:
+            return Vector((0, 0, 0))
         spline = obj.data.splines[0]
         spline_points = spline.bezier_points if spline.bezier_points else spline.points
         if not spline_points:
