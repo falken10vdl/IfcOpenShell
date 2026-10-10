@@ -2353,8 +2353,6 @@ class AddAnnotation(bpy.types.Operator, tool.Ifc.Operator):
             # item edit mode for these types.
             enable_editing=object_type not in ("ELEVATION", "SECTION"),
         )
-        if object_type == "IMAGE":
-            bpy.ops.bim.add_reference_image("INVOKE_DEFAULT", existing_object_by_name=obj.name)
         if is_manual:
             element = tool.Ifc.get_entity(obj)
             tool.Drawing.set_manual_drawing_reference(element)
@@ -2368,6 +2366,8 @@ class AddAnnotation(bpy.types.Operator, tool.Ifc.Operator):
                 core.assign_manual_drawing_reference(
                     tool.Ifc, tool.Drawing, element=element, drawing=tool.Ifc.get().by_id(int(self.drawing_id))
                 )
+        if props.object_type == "IMAGE":
+            bpy.ops.bim.add_reference_image("INVOKE_DEFAULT", existing_object_by_name=obj.name)
 
 
 class AssignManualDrawingReference(bpy.types.Operator, tool.Ifc.Operator):
