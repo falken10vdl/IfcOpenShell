@@ -34,6 +34,7 @@ classes = (
     operator.AddAnnotationToDrawing,
     operator.AddAnnotationType,
     operator.AssignManualDrawingReference,
+    operator.UpdateSectionEndpoints,
     operator.AddDrawing,
     operator.AddDrawingStyle,
     operator.AddDrawingToSheet,
