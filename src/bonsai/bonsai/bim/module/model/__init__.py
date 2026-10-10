@@ -180,6 +180,7 @@ classes = (
     covering.AddInstanceCeilingCoveringsFromWalls,
     covering.AddInstanceFlooringCoveringFromCursor,
     covering.AddInstanceCeilingCoveringFromCursor,
+    covering.AddInstanceWallCoveringsFromWalls,
     covering.RegenSelectedCoveringObject,
     space.ToggleSpaceVisibility,
     space.ToggleHideSpaces,
