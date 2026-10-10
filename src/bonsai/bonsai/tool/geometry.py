@@ -1135,6 +1135,7 @@ class Geometry(bonsai.core.tool.Geometry):
                     # TODO: calculate mapped item matrix.
                     "matrix": np.eye(4),
                 }
+                tool.Loader.load_settings()
                 curve, curve_thickness = tool.Loader.create_native_swept_disk_solid(element, mesh_name, native_data)
                 tool.Ifc.link(representation, curve)
             obj = tool.Ifc.get_object(element)
