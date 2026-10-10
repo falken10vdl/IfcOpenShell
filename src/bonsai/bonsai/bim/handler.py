@@ -326,6 +326,11 @@ def loadIfcStore(scene: bpy.types.Scene) -> None:
         tool.FileWatcher.cancel_timer()
         return
     tool.Ifc.schema()
+    # Loader.unit_scale defaults to 1 and is otherwise only set when a project is
+    # imported or created. Opening a .blend restores the project without doing
+    # either, so without this it keeps the default and every later use of it is
+    # wrong for any project not measured in metres.
+    tool.Loader.set_unit_scale(ifcopenshell.util.unit.calculate_unit_scale(tool.Ifc.get()))
     IfcStore.relink_all_objects()
     tool.Autosave.reset_timer()
     tool.FileWatcher.reset_timer()
