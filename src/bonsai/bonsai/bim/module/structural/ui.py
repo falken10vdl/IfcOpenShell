@@ -339,6 +339,9 @@ class BIM_PT_structural_analysis_models(Panel):
         else:
             row.operator("bim.load_structural_analysis_models", text="", icon="GREASEPENCIL")
 
+        if current_model := StructuralAnalysisModelsData.data["current_model"]:
+            self.layout.label(text=f"Current Model: {current_model['name']}", icon="RADIOBUT_ON")
+
         if self.props.is_editing:
             self.layout.template_list(
                 "BIM_UL_structural_analysis_models",
@@ -366,6 +369,14 @@ class BIM_UL_structural_analysis_models(UIList):
     ):
         if item:
             row = layout.row(align=True)
+            current_model = StructuralAnalysisModelsData.data["current_model"]
+            if current_model and current_model["id"] == item.ifc_definition_id:
+                row.label(text="", icon="RADIOBUT_ON")
+            else:
+                op = row.operator(
+                    "bim.set_current_structural_analysis_model", text="", icon="RADIOBUT_OFF", emboss=False
+                )
+                op.structural_analysis_model = item.ifc_definition_id
             row.label(text=item.name)
 
             if context.active_object:
@@ -421,40 +432,64 @@ class BIM_PT_structural_load_cases(Panel):
         row.label(text=load_case["name"], icon="CON_CLAMPTO")
 
         if self.props.active_load_case_id and self.props.active_load_case_id == load_case["id"]:
-            if self.props.load_case_editing_type == "ATTRIBUTES":
-                row.operator("bim.edit_structural_load_case", text="", icon="CHECKMARK")
-            elif self.props.load_case_editing_type == "GROUPS":
-                row.operator("bim.add_structural_load_group", text="", icon="ADD").load_case = load_case["id"]
+            row.operator("bim.edit_structural_load_case", text="", icon="CHECKMARK")
+            row.operator("bim.add_structural_load_group", text="", icon="ADD").load_case = load_case["id"]
             row.operator("bim.disable_editing_structural_load_case", text="", icon="CANCEL")
         elif self.props.active_load_case_id:
             row.operator("bim.remove_structural_load_case", text="", icon="X").load_case = load_case["id"]
         else:
-            row.operator(
-                "bim.enable_editing_structural_load_case_groups", text="", icon="GHOST_ENABLED"
-            ).load_case = load_case["id"]
             row.operator("bim.enable_editing_structural_load_case", text="", icon="GREASEPENCIL").load_case = load_case[
                 "id"
             ]
             row.operator("bim.remove_structural_load_case", text="", icon="X").load_case = load_case["id"]
 
         if self.props.active_load_case_id == load_case["id"]:
-            if self.props.load_case_editing_type == "ATTRIBUTES":
-                self.draw_editable_load_case_ui()
-            elif self.props.load_case_editing_type == "GROUPS":
-                self.draw_editable_load_case_group_ui(load_case)
+            self.draw_editable_load_case_ui()
+            self.draw_load_case_models_ui(load_case)
+            self.draw_editable_load_case_group_ui(load_case)
+
+    def draw_load_case_models_ui(self, load_case):
+        box = self.layout.box()
+        box.label(text="Analysis Models", icon="MOD_SIMPLIFY")
+        for model in StructuralLoadCasesData.data["models"]:
+            row = box.row(align=True)
+            if model["id"] in load_case["model_ids"]:
+                op = row.operator("bim.unassign_structural_load_case", text="", icon="CHECKBOX_HLT", emboss=False)
+            else:
+                op = row.operator("bim.assign_structural_load_case", text="", icon="CHECKBOX_DEHLT", emboss=False)
+            op.load_case = load_case["id"]
+            op.structural_analysis_model = model["id"]
+            row.label(text=model["name"])
 
     def draw_editable_load_case_ui(self):
-        draw_attributes(self.props.load_case_attributes, self.layout)
+        bonsai.bim.helper.draw_expandable_panel(
+            self.layout,
+            bpy.context,
+            "Attributes",
+            lambda layout, context: draw_attributes(self.props.load_case_attributes, layout),
+            panel_id="structural_load_case_attributes",
+        )
 
     def draw_editable_load_case_group_ui(self, load_case):
         box = self.layout.box()
+        box.label(text="Applied Loads", icon="FORCE_FORCE")
+        for activity in load_case["activities"]:
+            row = box.row(align=True)
+            row.label(text=activity["name"])
+            row.operator("bim.edit_structural_load_values", text="", icon="GREASEPENCIL").activity = activity["id"]
+            row.operator("bim.remove_structural_activity", text="", icon="X").activity = activity["id"]
+        row = box.row(align=True)
+        row.prop(self.props, "applicable_structural_load_types", text="")
+        row.prop(self.props, "applicable_structural_loads", text="")
+        row.operator("bim.add_structural_activity", text="", icon="ADD").load_group = load_case["id"]
+
         if not load_case["load_groups"]:
             row = box.row(align=True)
             row.label(text="No Load Groups Found")
         for load_group in load_case["load_groups"]:
             row = box.row(align=True)
-            row.label(text=load_group["name"], icon="GHOST_ENABLED")
-            op = row.operator("bim.enable_editing_structural_load_group_activities", text="", icon="GHOST_ENABLED")
+            row.label(text=load_group["name"], icon="OUTLINER_COLLECTION")
+            op = row.operator("bim.enable_editing_structural_load_group_activities", text="", icon="FORCE_FORCE")
             op.load_group = load_group["id"]
             row.operator("bim.remove_structural_load_group", text="", icon="X").load_group = load_group["id"]
 
@@ -493,6 +528,11 @@ class BIM_UL_structural_activities(UIList):
             row = layout.row(align=True)
             row.label(text=item.name)
             row.label(text=item.applied_load_class)
+            row.operator(
+                "bim.edit_structural_load_values", text="", icon="GREASEPENCIL"
+            ).activity = item.ifc_definition_id
+            op = row.operator("bim.remove_structural_activity", text="", icon="X")
+            op.activity = item.ifc_definition_id
 
 
 class BIM_PT_show_structural_activities(Panel):
@@ -523,6 +563,17 @@ class BIM_PT_show_structural_activities(Panel):
         row.prop(self.props, "activity_type")
         row = self.layout.row(align=True)
         row.prop(self.props, "load_group_to_show")
+        row = self.layout.row(align=True)
+        row.prop(self.props, "force_display")
+        row = self.layout.row(align=True)
+        row.prop(self.props, "force_scale")
+        row.prop(self.props, "show_force_angles")
+        if self.props.show_force_angles:
+            row = self.layout.row(align=True)
+            row.prop(self.props, "angle_reference")
+        row = self.layout.row(align=True)
+        row.prop(self.props, "force_decimals")
+        row.prop(self.props, "angle_decimals")
 
 
 class BIM_PT_structural_loads(Panel):
@@ -597,7 +648,7 @@ class BIM_UL_structural_loads(UIList):
                 op = row.operator("bim.remove_structural_load", text="", icon="X")
                 op.structural_load = item.ifc_definition_id
             else:
-                op = row.operator("bim.enable_editing_structural_load", text="", icon="GREASEPENCIL")
+                op = row.operator("bim.edit_structural_load_values", text="", icon="GREASEPENCIL")
                 op.structural_load = item.ifc_definition_id
                 op = row.operator("bim.remove_structural_load", text="", icon="X")
                 op.structural_load = item.ifc_definition_id
