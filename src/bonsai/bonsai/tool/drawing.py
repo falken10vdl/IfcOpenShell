@@ -1094,6 +1094,7 @@ class Drawing(bonsai.core.tool.Drawing):
         camera_props.update_props = False
 
         camera_props.has_underlay = False
+        camera_props.show_sheet_references = True
         camera_props.has_linework = True
         camera_props.has_annotation = True
         camera_props.target_view = "PLAN_VIEW"
@@ -1104,6 +1105,7 @@ class Drawing(bonsai.core.tool.Drawing):
         camera_props.render_sharp = True
         camera_props.ridge_angle_min_degrees = 45.0
         camera_props.render_flush = False
+        camera_props.freestyle_ifc_only = False
         camera.shift_x = 0.0
         camera.shift_y = 0.0
 
@@ -1127,6 +1129,8 @@ class Drawing(bonsai.core.tool.Drawing):
                     camera_props.custom_scale_denominator = denominator
             if "HasUnderlay" in pset:
                 camera_props.has_underlay = bool(pset["HasUnderlay"])
+            if "ShowSheetReferences" in pset:
+                camera_props.show_sheet_references = bool(pset["ShowSheetReferences"])
             if "HasLinework" in pset:
                 camera_props.has_linework = bool(pset["HasLinework"])
             if "HasAnnotation" in pset:
@@ -1155,6 +1159,8 @@ class Drawing(bonsai.core.tool.Drawing):
                 camera_props.fill_mode = str(pset["FillMode"])
             if "CutMode" in pset:
                 camera_props.cut_mode = str(pset["CutMode"])
+            if "FreestyleIfcOnly" in pset:
+                camera_props.freestyle_ifc_only = bool(pset["FreestyleIfcOnly"])
             if camera.type == "PERSP":
                 shifts = cls.get_perspective_camera_shifts(drawing)
                 camera.shift_x = shifts["shift_x"]
@@ -2370,6 +2376,10 @@ class Drawing(bonsai.core.tool.Drawing):
     @classmethod
     def has_annotation(cls, drawing: ifcopenshell.entity_instance) -> bool:
         return ifcopenshell.util.element.get_psets(drawing).get("EPset_Drawing", {}).get("HasAnnotation", False)
+
+    @classmethod
+    def show_sheet_references(cls, drawing: ifcopenshell.entity_instance) -> bool:
+        return ifcopenshell.util.element.get_psets(drawing).get("EPset_Drawing", {}).get("ShowSheetReferences", True)
 
     @classmethod
     def get_drawing_elements(
