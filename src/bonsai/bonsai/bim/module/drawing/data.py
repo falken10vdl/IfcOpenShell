@@ -379,6 +379,9 @@ class DecoratorData:
             "StartArrowSymbol": "",
             "ShowEndArrow": True,
             "EndArrowSymbol": "",
+            "BorderOffset": 8.0,
+            "AutoStartPosition": "",
+            "AutoEndPosition": "",
         }
         obj_pset_data = ifcopenshell.util.element.get_pset(element, "BBIM_Section") or {}
         pset_data.update(obj_pset_data)
@@ -398,6 +401,9 @@ class DecoratorData:
                 "symbol": end_symbol or "section-arrow",
             },
             "connect_markers": pset_data["HasConnectedSectionLine"],
+            "border_offset": float(pset_data["BorderOffset"]),
+            "auto_start_position": pset_data["AutoStartPosition"] or "",
+            "auto_end_position": pset_data["AutoEndPosition"] or "",
         }
 
         cls.data[obj.name] = display_data
@@ -865,19 +871,24 @@ class DecoratorData:
         pset_data = ifcopenshell.util.element.get_pset(element, "BBIM_Dimension") or {}
         show_description_only = pset_data.get("ShowDescriptionOnly", False)
         suppress_zero_inches = pset_data.get("SuppressZeroInches", False)
+        suppress_zero_feet = pset_data.get("SuppressZeroFeet", False)
+        is_ordinate = pset_data.get("IsOrdinate", False)
         text_prefix = pset_data.get("TextPrefix", None) or ""
         text_suffix = pset_data.get("TextSuffix", None) or ""
-        custom_unit_list = pset_data.get("CustomUnit", None) or ""
-        custom_unit = custom_unit_list[0] if custom_unit_list else ""
+        custom_units = list(pset_data.get("CustomUnit", None) or [])
+        separator = pset_data.get("Separator", None) or " / "
 
         return {
             "dimension_style": dimension_style,
             "show_description_only": show_description_only,
             "suppress_zero_inches": suppress_zero_inches,
+            "suppress_zero_feet": suppress_zero_feet,
+            "is_ordinate": is_ordinate,
             "text_prefix": text_prefix,
             "text_suffix": text_suffix,
             "fill_bg": fill_bg,
-            "custom_unit": custom_unit,
+            "custom_units": custom_units,
+            "separator": separator,
         }
 
     @classmethod
