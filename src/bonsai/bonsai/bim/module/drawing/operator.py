@@ -1554,11 +1554,36 @@ class CreateDrawing(bpy.types.Operator):
 
         # ─── Metadata ──────────────────────────────────────────────
         for key in self.metadata:
-            value = ifcopenshell.util.selector.get_element_value(element, key)
-            if value:
-                classes.append(
-                    tool.Drawing.canonicalise_class_name(key) + "-" + tool.Drawing.canonicalise_class_name(str(value))
-                )
+            head, _, tail = key.partition(".")
+            if layer and tail and head in self.MATERIAL_QUERY_HEADS:
+                # This group is one material layer, so a material query describes that layer,
+                # not the whole element. Otherwise a slab's concrete layer is tagged with the
+                # gravel layer's classes as well, and any CSS matching them paints it wrongly.
+                # Category is defined on both the set item and the material it references, and
+                # the set item wins where it is set - mirror the precedence util.selector uses
+                # for "mats.Category", so a layer keys the same way whether or not it is cut.
+                if tail == "Category" and getattr(layer, "Category", None) is not None:
+                    source = layer
+                else:
+                    source = self.get_cut_material(element, layer)
+                value = ifcopenshell.util.selector.get_element_value(source, tail) if source else None
+            else:
+                value = ifcopenshell.util.selector.get_element_value(element, key)
+            if not value:
+                continue
+            # A query may resolve to several values, e.g. "mats.Category" on a layered wall.
+            # Emit one class per value rather than stringifying the list, which would produce
+            # an unusable class like "matsCategory-NoneNoneBrick" - unstable, since it changes
+            # whenever a layer is added, and unmatchable by any meaningful CSS selector.
+            values = value if isinstance(value, (list, tuple, set)) else (value,)
+            prefix = tool.Drawing.canonicalise_class_name(key)
+            for v in values:
+                if v is None:
+                    continue  # An unset value in a list, e.g. a layer material with no Category.
+                if not (name := tool.Drawing.canonicalise_class_name(str(v))):
+                    continue  # Nothing survived canonicalisation, so there is no class to make.
+                if (svg_class := f"{prefix}-{name}") not in classes:
+                    classes.append(svg_class)
 
         return classes
 
@@ -1568,6 +1593,10 @@ class CreateDrawing(bpy.types.Operator):
     # drawn, so it is drawing state that no query over the element alone can express. Keeping it
     # separate also leaves "material.Name" meaning the same thing here as everywhere else.
     CUT_MATERIAL_QUERY_HEAD = "cut_material"
+
+    # Selector queries which resolve to a material. On a cut which is a single material layer,
+    # these describe that layer rather than the element's whole material set - see get_svg_classes.
+    MATERIAL_QUERY_HEADS = ("material", "mat", "materials", "mats")
 
     def get_cut_material(self, element, layer):
         """Get the single material which identifies a cut, if there is one.
