@@ -1454,7 +1454,7 @@ class DumbWallGenerator:
         if not self.layers["thickness"]:
             return
 
-        self.body_context = ifcopenshell.util.representation.get_context(tool.Ifc.get(), "Model", "Body", "MODEL_VIEW")
+        self.body_context = tool.Model.get_body_context()
         self.axis_context = ifcopenshell.util.representation.get_context(tool.Ifc.get(), "Plan", "Axis", "GRAPH_VIEW")
 
         props = tool.Model.get_model_props()
@@ -2887,9 +2887,7 @@ class AddPerpendicularWall(bpy.types.Operator, tool.Ifc.Operator):
         if not generator.layers["thickness"]:
             self.report({"WARNING"}, "Wall type has no layer thickness; cannot create branch wall.")
             return {"CANCELLED"}
-        generator.body_context = ifcopenshell.util.representation.get_context(
-            tool.Ifc.get(), "Model", "Body", "MODEL_VIEW"
-        )
+        generator.body_context = tool.Model.get_body_context()
         generator.axis_context = ifcopenshell.util.representation.get_context(
             tool.Ifc.get(), "Plan", "Axis", "GRAPH_VIEW"
         )
