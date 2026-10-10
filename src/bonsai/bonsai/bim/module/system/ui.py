@@ -302,6 +302,9 @@ class BIM_PT_port(Panel):
             row.label(text=f"Size: {size_label}", icon="DRIVER_DISTANCE")
 
         row = layout.row(align=True)
+        row.operator("bim.mep_connect_ports", icon="TRACKING")
+
+        row = layout.row(align=True)
         cols = [row.column(align=True) for i in range(10)]
         cols[3].scale_x = 1.0
         cols[6].scale_x = 1.0
