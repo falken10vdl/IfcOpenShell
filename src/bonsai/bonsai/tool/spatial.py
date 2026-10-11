@@ -1332,6 +1332,12 @@ class Spatial(bonsai.core.tool.Spatial):
                     obj.hide_viewport = True
 
     @classmethod
+    def set_grid_selectability(cls, is_selectable: bool) -> None:
+        for element in tool.Ifc.get().by_type("IfcGrid") + tool.Ifc.get().by_type("IfcGridAxis"):
+            if obj := tool.Ifc.get_object(element):
+                obj.hide_select = not is_selectable
+
+    @classmethod
     def toggle_spaces_visibility_wired_and_textured(cls, spaces: list[ifcopenshell.entity_instance]) -> None:
         objs: list[bpy.types.Object] = []
         for space in spaces:
