@@ -651,7 +651,8 @@ class EnableEditingExtrusionProfile(bpy.types.Operator, tool.Ifc.Operator):
 
         body = ifcopenshell.util.representation.get_representation(element, "Model", "Body", "MODEL_VIEW")
         body = ifcopenshell.util.representation.resolve_representation(body)
-        extrusion = tool.Model.get_extrusion(body)
+        if not (extrusion := tool.Model.get_extrusion(body)):
+            return
         existing_x_angle = tool.Model.get_existing_x_angle(extrusion)
         layer_params = tool.Model.get_material_layer_parameters(element)
 
@@ -729,7 +730,8 @@ class EditExtrusionProfile(bpy.types.Operator, tool.Ifc.Operator):
 
         body = ifcopenshell.util.representation.get_representation(element, "Model", "Body", "MODEL_VIEW")
         body = ifcopenshell.util.representation.resolve_representation(body)
-        extrusion = tool.Model.get_extrusion(body)
+        if not (extrusion := tool.Model.get_extrusion(body)):
+            return
         existing_x_angle = tool.Model.get_existing_x_angle(extrusion)
         layer_params = tool.Model.get_material_layer_parameters(element)
 
