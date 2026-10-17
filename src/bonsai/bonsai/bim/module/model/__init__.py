@@ -130,6 +130,7 @@ classes = (
     wall.AlignLocalXToLength,
     wall.SplitWall,
     wall.SplitWallAtCursor,
+    wall.TrimWall,
     wall.DisconnectElements,
     wall.UnjoinWalls,
     wall.EnableWallFilletPreview,
