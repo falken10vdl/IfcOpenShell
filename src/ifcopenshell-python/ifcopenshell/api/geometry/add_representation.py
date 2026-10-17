@@ -755,11 +755,25 @@ class Usecase:
             [point_cloud],
         )
 
+    def fallback_to_mesh_representation(self) -> ifcopenshell.entity_instance:
+        # The mesh could not be reverse engineered into an IfcExtrudedAreaSolid (#2851).
+        geometry = self.geometry
+        name = getattr(geometry, "name", "<unnamed>")
+        print(
+            f"Bonsai: could not reverse engineer '{name}' into an extrusion "
+            "(profile/extrusion detection failed, likely near-coincident vertices). "
+            "Falling back to a tessellated mesh representation."
+        )
+        return self.create_mesh_representation()
+
     def create_rectangle_extrusion_representation(self) -> ifcopenshell.entity_instance:
         helper = Helper(self.file)
         indices = helper.auto_detect_rectangle_profile_extruded_area_solid(self.geometry)
         profile_def = helper.create_rectangle_profile_def(self.geometry, indices["profile"])
-        item = helper.create_extruded_area_solid(self.geometry, indices["extrusion"], profile_def)
+        if not (
+            item := helper.create_extruded_area_solid(self.geometry, indices["extrusion"], profile_def)
+        ):
+            return self.fallback_to_mesh_representation()
         return self.file.createIfcShapeRepresentation(
             self.context,
             self.context.ContextIdentifier,
@@ -771,7 +785,10 @@ class Usecase:
         helper = Helper(self.file)
         indices = helper.auto_detect_circle_profile_extruded_area_solid(self.geometry)
         profile_def = helper.create_circle_profile_def(self.geometry, indices["profile"])
-        item = helper.create_extruded_area_solid(self.geometry, indices["extrusion"], profile_def)
+        if not (
+            item := helper.create_extruded_area_solid(self.geometry, indices["extrusion"], profile_def)
+        ):
+            return self.fallback_to_mesh_representation()
         return self.file.createIfcShapeRepresentation(
             self.context,
             self.context.ContextIdentifier,
@@ -783,7 +800,10 @@ class Usecase:
         helper = Helper(self.file)
         indices = helper.auto_detect_arbitrary_closed_profile_extruded_area_solid(self.geometry)
         profile_def = helper.create_arbitrary_closed_profile_def(self.geometry, indices["profile"])
-        item = helper.create_extruded_area_solid(self.geometry, indices["extrusion"], profile_def)
+        if not (
+            item := helper.create_extruded_area_solid(self.geometry, indices["extrusion"], profile_def)
+        ):
+            return self.fallback_to_mesh_representation()
         return self.file.createIfcShapeRepresentation(
             self.context,
             self.context.ContextIdentifier,
@@ -799,7 +819,10 @@ class Usecase:
         profile_def = helper.create_arbitrary_profile_def_with_voids(
             self.geometry, indices["profile"], indices["inner_curves"]
         )
-        item = helper.create_extruded_area_solid(self.geometry, indices["extrusion"], profile_def)
+        if not (
+            item := helper.create_extruded_area_solid(self.geometry, indices["extrusion"], profile_def)
+        ):
+            return self.fallback_to_mesh_representation()
         return self.file.createIfcShapeRepresentation(
             self.context,
             self.context.ContextIdentifier,
