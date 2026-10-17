@@ -145,9 +145,11 @@ class Usecase:
                     self.cascade_task(nested_task, task_sequence=task_sequence + [task])
             return
 
+        # Milestones have no duration by definition, even if a stray
+        # ScheduleDuration is present in the data.
         duration = (
             ifcopenshell.util.date.ifc2datetime(task.TaskTime.ScheduleDuration)
-            if task.TaskTime.ScheduleDuration
+            if task.TaskTime.ScheduleDuration and not task.IsMilestone
             else datetime.timedelta()
         )
 
@@ -159,7 +161,7 @@ class Usecase:
             predecessor = rel.RelatingProcess
             predecessor_duration = (
                 ifcopenshell.util.date.ifc2datetime(predecessor.TaskTime.ScheduleDuration)
-                if predecessor.TaskTime and predecessor.TaskTime.ScheduleDuration
+                if predecessor.TaskTime and predecessor.TaskTime.ScheduleDuration and not predecessor.IsMilestone
                 else datetime.timedelta()
             )
             if rel.SequenceType == "FINISH_START":
