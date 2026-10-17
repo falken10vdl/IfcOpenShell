@@ -635,6 +635,7 @@ class ShaderInfo:
         """
         props = tool.Structural.get_structural_props()
         ifc_file = tool.Ifc.get()
+        self.tag_new_entries(None)  # The last item's drawing tagged as its own, as dimensions look for it.
         centre, obj, at, group = self.get_moment_centre()
         if not centre:
             return
@@ -650,6 +651,8 @@ class ShaderInfo:
         decimals = props.force_decimals
         total = 0.0
         starts = []  # Where each force's drawing starts, to hide it with its point.
+        kind, unknown_activity = tool.Structural.get_moment_centre_unknown(group)
+        found_focus = {"ARM": ("arm",), "REACH": ("distance",), "SWING": ("phi", "alpha", "angle")}.get(kind, ())
         for i, (point, activity, location, force) in enumerate(forces, 1):
             starts.append((len(self.info), len(self.text_info), point, activity))
             moment, arm, foot = tool.Structural.get_moment(at, location, force)
@@ -677,18 +680,25 @@ class ShaderInfo:
                 a, b = foot + towards * corner, foot + side * corner
                 self.add_dashed_line(a, a + side * corner, size, color, dashed=False)
                 self.add_dashed_line(b, b + towards * corner, size, color, dashed=False)
-            turn = "CCW" if moment > 0 else "CW"  # The viewport's font has no turning arrows.
+            if props.show_force_slopes:
+                # The arm's slope, out by its foot, clear of r's by A; A brought to the arm's own X-Z plane, as
+                # Blender's single precision can leave it a hair off it, which would show no slope.
+                self.add_force_slope(np.array((at[0], foot[1], at[2])), foot, size, color)
             # The arm's length, then its moment beneath it: labels placed later move clear of earlier ones, away
             # from the arm, which is down, or across for a level line of action.
             away = -along if along[2] > 0 else along
             for text in (
                 f"{get_plain_symbol(f'd_{{{i}}}')} = {arm:.2f} {self.length_unit}",
-                f"{symbol} = {abs(moment):.{decimals}f} {self.moment_unit} {turn}",
+                f"{symbol} = {moment:+.{decimals}f} {self.moment_unit}",  # Counter-clockwise positive.
             ):
                 self.text_info.append(
                     {"position": (at + foot) / 2, "text": text, "color": color, "away": away, "focus": "arm"}
                 )
             self.add_moment_triangle(i, at, location, foot, size, color, length_scale)
+            # Last, so that they clear all of it and the force's own diagram at its point.
+            point_obj = tool.Ifc.get_object(point)
+            drawn = self.get_drawn_points(starts[-1][0], starts[-1][1], point_obj.name if point_obj else None)
+            self.add_moment_dimensions(i, at, location, size, color, length_scale, drawn)
         # Each force's moment hides with its point as its force does, and all of them with the centre.
         ends = [(info, text) for info, text, _, _ in starts[1:]] + [(len(self.info), len(self.text_info))]
         for (info, text, point, activity), (info_end, text_end) in zip(starts, ends):
@@ -697,6 +707,11 @@ class ShaderInfo:
                 entry["visible_with"] = (obj.name, point_obj.name) if point_obj else (obj.name,)
             # Hovered, its lines and labels highlight together; clicked, they edit where A is from its point.
             texts = self.text_info[text:text_end]
+            if unknown_activity is not None and unknown_activity.id() == activity:
+                # The value of A's place a kept moment finds, marked as found values are.
+                for label in texts:
+                    if label.get("focus") in found_focus and not label["text"].startswith("M"):
+                        label["text"] += " 🔓"
             self.add_moment_pickable(info, info_end, texts, group.id(), point.id(), activity)
         self.add_moment_arrow(at, total, size, "ΣM_A" if len(forces) > 1 else "M_A", group.id())
         if self.load_group is not None:
@@ -800,6 +815,20 @@ class ShaderInfo:
                 "focus": "distance",
             }
         )
+        along = foot - location
+        if np.linalg.norm(along) > 1e-9 * np.linalg.norm(r):
+            # The triangle's third side, along the line of action from the force's point to the arm's foot,
+            # r cos phi, labelled outside the triangle, away from A.
+            outside = foot - at
+            self.text_info.append(
+                {
+                    "position": (location + foot) / 2,
+                    "text": f"{get_plain_symbol(f's_{{{i}}}')} = {np.linalg.norm(along) / length_scale:.2f} "
+                    f"{self.length_unit}",
+                    "color": color,
+                    "away": outside / (np.linalg.norm(outside) or 1),
+                }
+            )
         if tool.Structural.get_structural_props().show_force_angles:
             # r's direction from the point, as Edit Moment Centre enters it, measured as a force's angle is.
             first_text, reference_axes = len(self.text_info), {}
@@ -813,6 +842,74 @@ class ShaderInfo:
             return  # The line of action is square to r: phi is 90 degrees, shown by the arm's corner.
         self.add_angle_between(location, at, foot, size, color, get_plain_symbol(f"φ_{{{i}}}"), "phi")
         self.add_angle_between(at, location, foot, size, color, get_plain_symbol(f"α_{{{i}}}"), "alpha")
+
+    def get_drawn_points(self, first: int, first_text: int, obj_name: Union[str, None]) -> list[np.ndarray]:
+        """The ends of the lines and arrows, and the labels' anchors, drawn from first on, and those of an object's
+        own drawing, as a point's force diagram, which dimensions are to keep clear of"""
+        points = []
+        for index, entry in enumerate(self.info):
+            if index >= first or (obj_name and entry.get("object") == obj_name):
+                primitive = entry.get("primitive") or {}
+                points += [np.array(primitive[k]) for k in ("start", "end", "tail", "tip") if k in primitive]
+        for index, text in enumerate(self.text_info):
+            if index >= first_text or (obj_name and text.get("object") == obj_name):
+                points.append(np.array(text["position"]))
+        return points
+
+    def add_moment_dimensions(
+        self,
+        i: int,
+        at: np.ndarray,
+        location: np.ndarray,
+        size: float,
+        color: tuple,
+        length_scale: float,
+        drawn: Union[list[np.ndarray], None] = None,
+    ) -> None:
+        """Dimension r's run and rise, Δx and Δz from A to where the force acts, as a text's figure gives them: a
+        horizontal dimension above all that is drawn and a vertical one beside it, with extension lines and ticks.
+
+        :param drawn: Points of what is drawn, which they keep clear of, with room for its labels.
+        """
+        clear = 0.3 * size  # Beyond what is drawn, with room for the labels anchored at its edge.
+        tick = 0.03 * size
+        y = location[1]
+        # The curved arrow round A, drawn after, and its label above it.
+        reach = 0.35 * size
+        points = (drawn or []) + [location, at + np.array((-reach, 0, 0)), at + np.array((0, 0, 2 * reach))]
+        top = max(p[2] for p in points) + clear
+        side = min(p[0] for p in points) - clear  # On the left, as texts draw them.
+        for k, start, end, line_at, focus, axis in (
+            (0, at[0], location[0], top, "dx", "x"),
+            (2, at[2], location[2], side, "dz", "z"),
+        ):
+            delta = end - start
+            if abs(delta) < 1e-9 * max(size, 1e-9):
+                continue  # Level, or plumb: nothing to dimension.
+            if k == 0:
+                a, b = np.array((start, y, line_at)), np.array((end, y, line_at))
+                extensions = ((np.array((at[0], y, at[2])), a), (np.array((location[0], y, location[2])), b))
+                slash = np.array((tick, 0.0, tick))
+                away = np.array((0, 0, 1.0))
+            else:
+                a, b = np.array((line_at, y, start)), np.array((line_at, y, end))
+                extensions = ((np.array((at[0], y, at[2])), a), (np.array((location[0], y, location[2])), b))
+                slash = np.array((tick, 0.0, tick))
+                away = np.array((-1.0, 0, 0))
+            for p, q in extensions:
+                self.add_dashed_line(p, q, size, color)
+            self.add_dashed_line(a, b, size, color, dashed=False)
+            for end_point in (a, b):
+                self.add_dashed_line(end_point - slash, end_point + slash, size, color, dashed=False)
+            self.text_info.append(
+                {
+                    "position": (a + b) / 2,
+                    "text": f"Δ{get_plain_symbol(f'{axis}_{{{i}}}')} = {abs(delta) / length_scale:.2f} {self.length_unit}",  # A length, as dimensions give.
+                    "color": color,
+                    "away": away,
+                    "focus": focus,
+                }
+            )
 
     def add_angle_between(
         self,
@@ -861,7 +958,7 @@ class ShaderInfo:
         if abs(moment) < 10 ** -(decimals + 1):
             text = f"{symbol} = 0"
         else:
-            text = f"{symbol} = {abs(moment):.{decimals}f} {self.moment_unit} {'CCW' if moment > 0 else 'CW'}"
+            text = f"{symbol} = {moment:+.{decimals}f} {self.moment_unit}"  # Counter-clockwise positive.
             radius, sweep = 0.35 * size, (1 if moment > 0 else -1) * np.radians(270)
             angles = np.radians(-45) + np.linspace(0, sweep, 28)
             arc = [at + radius * np.array((np.cos(a), 0.0, np.sin(a))) for a in angles]
@@ -1702,6 +1799,7 @@ class ShaderInfo:
         direction = (tip - tail) / length
         # The shader works in units of a fifth of size: the head is 2 * spacing of them long.
         unit = size / 5
+        thickness = tool.Structural.get_structural_props().arrow_thickness
         d2, d3 = self.get_perpendicular_axes(direction)
         d2, d3 = d2 * unit, d3 * unit
         self.info.append(
@@ -1718,9 +1816,17 @@ class ShaderInfo:
                     ],
                 },
                 "indices": [(0, 1, 2), (0, 3, 4)],
-                "uniforms": [["color", color], ["spacing", spacing]],
+                # The shader sizes the shaft and the head from spacing, so thickness scales them together.
+                "uniforms": [["color", color], ["spacing", float(spacing * thickness)]],
                 # The arrow itself, for drawing it elsewhere than the viewport, as in a report.
-                "primitive": {"type": "ARROW", "tail": tail, "tip": tip, "size": size, "spacing": spacing},
+                "primitive": {
+                    "type": "ARROW",
+                    "tail": tail,
+                    "tip": tip,
+                    "size": size,
+                    "spacing": spacing,
+                    "thickness": thickness,
+                },
                 "color": color,
             }
         )
