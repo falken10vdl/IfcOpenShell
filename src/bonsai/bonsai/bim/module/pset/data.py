@@ -80,6 +80,7 @@ class Data:
                     ],
                     "shared_pset_uses": len(pset_uses),
                     "has_template": has_template,
+                    "is_editable": tool.Pset.is_editable(pset),
                 }
             )
         return sorted(results, key=lambda v: v["Name"])
