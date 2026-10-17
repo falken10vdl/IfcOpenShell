@@ -123,6 +123,9 @@ class BIM_PT_camera(Panel):
             row.prop(props, "freestyle_ifc_only")
 
         row = self.layout.row()
+        row.prop(props, "has_status_classes")
+
+        row = self.layout.row()
         row.prop(props, "use_edge_classification")
         if props.use_edge_classification:
             row = self.layout.row()
