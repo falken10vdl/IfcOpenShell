@@ -24,6 +24,7 @@ import ifcopenshell.util.element
 
 import bonsai.bim.helper
 import bonsai.tool as tool
+from bonsai.bim.module.group.data import ObjectGroupsData
 
 
 class LoadGroups(bpy.types.Operator, tool.Ifc.Operator):
@@ -78,6 +79,7 @@ class AddGroup(bpy.types.Operator, tool.Ifc.Operator):
     bl_label = "Add New Group"
     bl_options = {"REGISTER", "UNDO"}
     group: bpy.props.IntProperty()
+    name: bpy.props.StringProperty(name="Name", default="Unnamed", options={"SKIP_SAVE"})
 
     @classmethod
     def description(cls, context, properties) -> str:
@@ -85,13 +87,89 @@ class AddGroup(bpy.types.Operator, tool.Ifc.Operator):
             return "Add new subgroup to the active IfcGroup."
         return "Add new IfcGroup."
 
+    def invoke(self, context, event):
+        return context.window_manager.invoke_props_dialog(self)
+
+    def draw(self, context):
+        self.layout.prop(self, "name")
+
     def _execute(self, context):
-        result = ifcopenshell.api.group.add_group(tool.Ifc.get())
+        result = ifcopenshell.api.group.add_group(tool.Ifc.get(), name=self.name)
         if self.group:
             group = tool.Ifc.get().by_id(self.group)
             ifcopenshell.api.group.assign_group(tool.Ifc.get(), products=[result], group=group)
             tool.Group.toggle_group(group, "IfcGroup", "EXPAND")
         tool.Group.import_groups("IfcGroup")
+        return {"FINISHED"}
+
+
+class AddGroupToSelected(bpy.types.Operator, tool.Ifc.Operator):
+    bl_idname = "bim.add_group_to_selected"
+    bl_label = "Add Group"
+    bl_options = {"REGISTER", "UNDO"}
+    bl_description = "Add a new IfcGroup and assign the selected objects to it"
+    name: bpy.props.StringProperty(name="Name", default="Unnamed", options={"SKIP_SAVE"})
+    allow_duplicate: bpy.props.BoolProperty(default=False, options={"SKIP_SAVE", "HIDDEN"})
+
+    def invoke(self, context, event):
+        if self.allow_duplicate:
+            return context.window_manager.invoke_confirm(
+                self,
+                event,
+                title="Duplicate Group Name",
+                message=f'A group named "{self.name}" already exists. Add another one?',
+                confirm_text="Add Group",
+            )
+        return context.window_manager.invoke_props_dialog(self)
+
+    def _execute(self, context):
+        ifc_file = tool.Ifc.get()
+        if not self.allow_duplicate and any(g.Name == self.name for g in tool.Group.get_user_groups()):
+            # Ask again from a confirmation popup, which runs this operator anew.
+            bpy.ops.bim.add_group_to_selected("INVOKE_DEFAULT", name=self.name, allow_duplicate=True)
+            return
+        group = ifcopenshell.api.group.add_group(ifc_file, name=self.name)
+        products = [
+            element
+            for o in tool.Blender.get_selected_objects(include_active=False)
+            if (element := tool.Ifc.get_entity(o))
+        ]
+        if products:
+            ifcopenshell.api.group.assign_group(ifc_file, products=products, group=group)
+        tool.Group.import_groups("IfcGroup")
+        tool.Blender.update_all_properties_editors(context)
+        self.report({"INFO"}, f"Added group with {len(products)} objects.")
+
+
+class EnableEditingObjectGroups(bpy.types.Operator):
+    bl_idname = "bim.enable_editing_object_groups"
+    bl_label = "Assign to Existing Group"
+    bl_options = {"REGISTER", "UNDO"}
+    bl_description = (
+        "Pick an existing group, or a system or zone the active object can join, to assign the selected objects to"
+    )
+
+    @classmethod
+    def poll(cls, context):
+        if not ObjectGroupsData.is_loaded:
+            ObjectGroupsData.load()
+        if not ObjectGroupsData.data["group_items"]:
+            cls.poll_message_set("No groups, or systems or zones this object can join. Add a group first.")
+            return False
+        return True
+
+    def execute(self, context):
+        tool.Group.get_group_props().is_editing_object_groups = True
+        return {"FINISHED"}
+
+
+class DisableEditingObjectGroups(bpy.types.Operator):
+    bl_idname = "bim.disable_editing_object_groups"
+    bl_label = "Cancel"
+    bl_options = {"REGISTER", "UNDO"}
+
+    def execute(self, context):
+        tool.Group.get_group_props().is_editing_object_groups = False
         return {"FINISHED"}
 
 
@@ -173,6 +251,8 @@ class AssignGroup(bpy.types.Operator, tool.Ifc.Operator):
         relocated_annotations = self.unassign_from_previous_drawing(ifc_file, group, products)
         ifcopenshell.api.group.assign_group(ifc_file, products=products, group=group)
         self.relocate_annotations_to_drawing(relocated_annotations, group)
+        tool.Group.get_group_props().is_editing_object_groups = False
+        tool.Blender.update_all_properties_editors(context)
         self.report({"INFO"}, f"Assigned {len(products)} objects to group.")
 
     def unassign_from_previous_drawing(self, ifc_file, group, products) -> list[ifcopenshell.entity_instance]:
@@ -226,6 +306,7 @@ class UnassignGroup(bpy.types.Operator, tool.Ifc.Operator):
         if not products:
             return
         ifcopenshell.api.group.unassign_group(tool.Ifc.get(), products=products, group=tool.Ifc.get().by_id(self.group))
+        tool.Blender.update_all_properties_editors(context)
         self.report({"INFO"}, f"Unassigned {len(products)} objects from group.")
 
 
