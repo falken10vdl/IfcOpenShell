@@ -222,6 +222,7 @@ class SystemDecorationData:
         Port data includes:
             - local port position in SI units
             - port flow direction
+            - the port entity itself
 
         """
         if element not in cls.elements_ports_positions:
@@ -233,6 +234,7 @@ class SystemDecorationData:
                 port_data = {
                     "position": position,
                     "flow_direction": port.FlowDirection,
+                    "port": port,
                 }
                 ports_data.append(port_data)
             cls.elements_ports_positions[element] = ports_data
