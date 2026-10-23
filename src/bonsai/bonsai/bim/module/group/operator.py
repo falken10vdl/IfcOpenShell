@@ -24,6 +24,20 @@ import ifcopenshell.util.element
 
 import bonsai.bim.helper
 import bonsai.tool as tool
+from bonsai.bim.module.group.data import ObjectGroupsData
+
+
+def run_routed(operator: bpy.types.Operator, routed_operator, **kwargs) -> set[str]:
+    """Run the operator that handles a kind of group (e.g. bim.assign_system) from a Groups operator.
+
+    Blender raises an error an operator reports as a RuntimeError when it's called from Python, so pass
+    the message on as this operator's own report rather than as a traceback.
+    """
+    try:
+        return routed_operator(**kwargs)
+    except RuntimeError as error:
+        operator.report({"ERROR"}, str(error).removeprefix("Error: ").strip())
+        return {"CANCELLED"}
 
 
 class LoadGroups(bpy.types.Operator, tool.Ifc.Operator):
@@ -78,6 +92,7 @@ class AddGroup(bpy.types.Operator, tool.Ifc.Operator):
     bl_label = "Add New Group"
     bl_options = {"REGISTER", "UNDO"}
     group: bpy.props.IntProperty()
+    name: bpy.props.StringProperty(name="Name", default="Unnamed", options={"SKIP_SAVE"})
 
     @classmethod
     def description(cls, context, properties) -> str:
@@ -85,13 +100,102 @@ class AddGroup(bpy.types.Operator, tool.Ifc.Operator):
             return "Add new subgroup to the active IfcGroup."
         return "Add new IfcGroup."
 
+    def invoke(self, context, event):
+        return context.window_manager.invoke_props_dialog(self)
+
+    def draw(self, context):
+        if self.is_adding_subsystem():
+            self.layout.prop(tool.System.get_system_props(), "system_class", text="Class")
+        self.layout.prop(self, "name")
+
+    def is_adding_subsystem(self) -> bool:
+        return bool(self.group) and tool.Group.get_kind(tool.Ifc.get().by_id(self.group)) == "SYSTEM"
+
     def _execute(self, context):
-        result = ifcopenshell.api.group.add_group(tool.Ifc.get())
+        if self.is_adding_subsystem():
+            # A child of a system is a subsystem, added like the Systems panel does.
+            run_routed(self, bpy.ops.bim.add_system, parent_system_id=self.group, name=self.name)
+        else:
+            result = ifcopenshell.api.group.add_group(tool.Ifc.get(), name=self.name)
+            if self.group:
+                ifcopenshell.api.group.assign_group(
+                    tool.Ifc.get(), products=[result], group=tool.Ifc.get().by_id(self.group)
+                )
         if self.group:
-            group = tool.Ifc.get().by_id(self.group)
-            ifcopenshell.api.group.assign_group(tool.Ifc.get(), products=[result], group=group)
-            tool.Group.toggle_group(group, "IfcGroup", "EXPAND")
+            tool.Group.toggle_group(tool.Ifc.get().by_id(self.group), "IfcGroup", "EXPAND")
         tool.Group.import_groups("IfcGroup")
+        return {"FINISHED"}
+
+
+class AddGroupToSelected(bpy.types.Operator, tool.Ifc.Operator):
+    bl_idname = "bim.add_group_to_selected"
+    bl_label = "Add Group"
+    bl_options = {"REGISTER", "UNDO"}
+    bl_description = "Add a new IfcGroup and assign the selected objects to it"
+    name: bpy.props.StringProperty(name="Name", default="Unnamed", options={"SKIP_SAVE"})
+    allow_duplicate: bpy.props.BoolProperty(default=False, options={"SKIP_SAVE", "HIDDEN"})
+
+    def invoke(self, context, event):
+        if self.allow_duplicate:
+            return context.window_manager.invoke_confirm(
+                self,
+                event,
+                title="Duplicate Group Name",
+                message=f'A group named "{self.name}" already exists. Add another one?',
+                confirm_text="Add Group",
+            )
+        return context.window_manager.invoke_props_dialog(self)
+
+    def _execute(self, context):
+        ifc_file = tool.Ifc.get()
+        if not self.allow_duplicate and any(g.Name == self.name for g in tool.Group.get_user_groups()):
+            # Ask again from a confirmation popup, which runs this operator anew.
+            bpy.ops.bim.add_group_to_selected("INVOKE_DEFAULT", name=self.name, allow_duplicate=True)
+            return
+        group = ifcopenshell.api.group.add_group(ifc_file, name=self.name)
+        products = [
+            element
+            for o in tool.Blender.get_selected_objects(include_active=False)
+            if (element := tool.Ifc.get_entity(o))
+        ]
+        if products:
+            ifcopenshell.api.group.assign_group(ifc_file, products=products, group=group)
+        tool.Group.import_groups("IfcGroup")
+        tool.Blender.update_all_properties_editors(context)
+        # Groups include systems, whose membership the viewport decorations depend on.
+        tool.Blender.update_all_viewports(context)
+        self.report({"INFO"}, f"Added group with {len(products)} objects.")
+
+
+class EnableEditingObjectGroups(bpy.types.Operator):
+    bl_idname = "bim.enable_editing_object_groups"
+    bl_label = "Assign to Existing Group"
+    bl_options = {"REGISTER", "UNDO"}
+    bl_description = (
+        "Pick an existing group, or a system or zone the active object can join, to assign the selected objects to"
+    )
+
+    @classmethod
+    def poll(cls, context):
+        if not ObjectGroupsData.is_loaded:
+            ObjectGroupsData.load()
+        if not ObjectGroupsData.data["group_items"]:
+            cls.poll_message_set("No groups, or systems or zones this object can join. Add a group first.")
+            return False
+        return True
+
+    def execute(self, context):
+        tool.Group.get_group_props().is_editing_object_groups = True
+        return {"FINISHED"}
+
+
+class DisableEditingObjectGroups(bpy.types.Operator):
+    bl_idname = "bim.disable_editing_object_groups"
+    bl_label = "Cancel"
+    bl_options = {"REGISTER", "UNDO"}
+
+    def execute(self, context):
+        tool.Group.get_group_props().is_editing_object_groups = False
         return {"FINISHED"}
 
 
@@ -117,7 +221,20 @@ class RemoveGroup(bpy.types.Operator, tool.Ifc.Operator):
 
     def _execute(self, context):
         self.file = tool.Ifc.get()
-        ifcopenshell.api.group.remove_group(self.file, group=self.file.by_id(self.group))
+        group = self.file.by_id(self.group)
+        # Remove other kinds of group the way their own panels do, so those panels stay up to date.
+        if group.is_a("IfcStructuralAnalysisModel"):
+            run_routed(self, bpy.ops.bim.remove_structural_analysis_model, structural_analysis_model=self.group)
+        elif group.is_a("IfcStructuralLoadCase"):
+            run_routed(self, bpy.ops.bim.remove_structural_load_case, load_case=self.group)
+        elif group.is_a("IfcStructuralLoadGroup"):
+            run_routed(self, bpy.ops.bim.remove_structural_load_group, load_group=self.group)
+        elif group.is_a("IfcZone"):
+            run_routed(self, bpy.ops.bim.remove_zone, zone=self.group)
+        elif group.is_a("IfcSystem"):
+            run_routed(self, bpy.ops.bim.remove_system, system=self.group)
+        else:
+            ifcopenshell.api.group.remove_group(self.file, group=group)
         tool.Group.import_groups("IfcGroup")
         tool.Group.update_uilist_index("IfcGroup")
         return {"FINISHED"}
@@ -165,6 +282,11 @@ class AssignGroup(bpy.types.Operator, tool.Ifc.Operator):
             return bpy.ops.bim.unassign_group(group=self.group)
         ifc_file = tool.Ifc.get()
         group = ifc_file.by_id(self.group)
+        # Systems, zones and structural analysis models only accept some classes, which their operators check.
+        if group.is_a("IfcStructuralAnalysisModel"):
+            return run_routed(self, bpy.ops.bim.assign_structural_analysis_model, structural_analysis_model=self.group)
+        if group.is_a("IfcSystem"):
+            return run_routed(self, bpy.ops.bim.assign_system, system=self.group)
         products = [
             element
             for o in tool.Blender.get_selected_objects(include_active=False)
@@ -173,6 +295,10 @@ class AssignGroup(bpy.types.Operator, tool.Ifc.Operator):
         relocated_annotations = self.unassign_from_previous_drawing(ifc_file, group, products)
         ifcopenshell.api.group.assign_group(ifc_file, products=products, group=group)
         self.relocate_annotations_to_drawing(relocated_annotations, group)
+        tool.Group.get_group_props().is_editing_object_groups = False
+        tool.Blender.update_all_properties_editors(context)
+        # Groups include systems, whose membership the viewport decorations depend on.
+        tool.Blender.update_all_viewports(context)
         self.report({"INFO"}, f"Assigned {len(products)} objects to group.")
 
     def unassign_from_previous_drawing(self, ifc_file, group, products) -> list[ifcopenshell.entity_instance]:
@@ -218,6 +344,10 @@ class UnassignGroup(bpy.types.Operator, tool.Ifc.Operator):
     group: bpy.props.IntProperty(options={"SKIP_SAVE"})
 
     def _execute(self, context):
+        if tool.Ifc.get().by_id(self.group).is_a("IfcStructuralAnalysisModel"):
+            return run_routed(
+                self, bpy.ops.bim.unassign_structural_analysis_model, structural_analysis_model=self.group
+            )
         products = [
             element
             for o in tool.Blender.get_selected_objects(include_active=False)
@@ -226,6 +356,9 @@ class UnassignGroup(bpy.types.Operator, tool.Ifc.Operator):
         if not products:
             return
         ifcopenshell.api.group.unassign_group(tool.Ifc.get(), products=products, group=tool.Ifc.get().by_id(self.group))
+        tool.Blender.update_all_properties_editors(context)
+        # Groups include systems, whose membership the viewport decorations depend on.
+        tool.Blender.update_all_viewports(context)
         self.report({"INFO"}, f"Unassigned {len(products)} objects from group.")
 
 
