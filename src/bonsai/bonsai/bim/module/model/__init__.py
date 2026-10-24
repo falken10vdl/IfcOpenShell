@@ -287,6 +287,7 @@ classes = (
     mep.MEPAddObstruction,
     mep.MEPAddTransition,
     mep.MEPAddBend,
+    mep.MEPAddJunction,
     mep.MEPRemoveTerminalFitting,
     mep.SelectMEPPathMembers,
     mep.MEPJoinSegments,
