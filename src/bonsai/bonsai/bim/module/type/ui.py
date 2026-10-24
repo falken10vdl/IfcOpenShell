@@ -109,6 +109,11 @@ class BIM_PT_type(Panel):
                 row.operator("bim.enable_editing_type", icon="GREASEPENCIL", text="")
                 row.operator("bim.convert_to_type", icon="ADD", text="Convert to Type")
 
+        # Length checkbox: ticked = per-instance editable length, unticked = typed/shared length.
+        # The checkbox state is read from the IFC (get/set property); ticking runs the conversion.
+        if TypeData.data.get("is_typed_length_profile") or TypeData.data.get("can_make_length_type_driven"):
+            layout.row(align=True).prop(props, "length_per_instance", text="Per-instance Length")
+
 
 class BIM_PT_type_attributes(Panel):
     bl_label = "Type Attributes"
