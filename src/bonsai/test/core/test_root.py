@@ -135,6 +135,7 @@ class TestAssignClass:
         root.run_geometry_add_representation(
             obj="obj", context="context", ifc_representation_class="ifc_representation_class", profile_set_usage=None
         ).should_be_called()
+        root.set_default_structural_axis("element", "obj").should_be_called()
 
         root.is_drawing_annotation("element").should_be_called().will_return(False)
         root.get_default_container().should_be_called().will_return("default_container")
@@ -167,6 +168,7 @@ class TestAssignClass:
         root.run_geometry_add_representation(
             obj="obj", context="context", ifc_representation_class="ifc_representation_class", profile_set_usage=None
         ).should_be_called()
+        root.set_default_structural_axis("element", "obj").should_be_called()
 
         root.is_drawing_annotation("element").should_be_called().will_return(False)
         root.get_default_container().should_be_called().will_return("default_container")
@@ -202,6 +204,7 @@ class TestAssignClass:
         root.run_geometry_add_representation(
             obj="obj", context="context", ifc_representation_class="ifc_representation_class", profile_set_usage=None
         ).should_be_called()
+        root.set_default_structural_axis("element", "obj").should_be_called()
 
         root.is_drawing_annotation("element").should_be_called().will_return(True)
 
@@ -226,6 +229,7 @@ class TestAssignClass:
         ).should_be_called().will_return("element")
         root.set_object_name("obj", "element").should_be_called()
         ifc.link("element", "obj").should_be_called()
+        root.set_default_structural_axis("element", "obj").should_be_called()
         root.is_drawing_annotation("element").should_be_called().will_return(False)
         root.get_default_container().should_be_called().will_return(None)
         collector.assign("obj").should_be_called()
