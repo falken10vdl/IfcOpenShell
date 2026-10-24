@@ -662,12 +662,6 @@ class BIM_ADDON_preferences(bpy.types.AddonPreferences):
         description="Default parameters for BIM elements",
     )
 
-    container_hide_show_isolate: BoolProperty(
-        name="Container hide/show/isolate",
-        description="Enable container hide/show/isolate feature in the UI",
-        default=False,
-    )
-
     chain_filter_with_set_operations: BoolProperty(
         name="NEW Filter mode: Enable chained filters with set operations",
         description=(
@@ -736,7 +730,6 @@ class BIM_ADDON_preferences(bpy.types.AddonPreferences):
         pset_dir: str
         doc: DocPreferences
         default_parameters: DefaultParameters
-        container_hide_show_isolate: bool
         chain_filter_with_set_operations: bool
         save_metadata_blend_file: bool
         metadata_blend_file_suffix: str
@@ -888,7 +881,6 @@ class BIM_ADDON_preferences(bpy.types.AddonPreferences):
         layout.prop(self, "bsdd_baseurl")
 
     def draw_extras_settings(self, layout: bpy.types.UILayout, context: bpy.types.Context) -> None:
-        layout.prop(self, "container_hide_show_isolate")
         row = layout.row(align=True)
         row.prop(self, "chain_filter_with_set_operations")
         row.operator("bim.open_uri", text="", icon="HELP").uri = "https://community.osarch.org/discussion/3270"
@@ -1124,6 +1116,23 @@ class BIM_PT_tab_spatial(Panel):
         pass
 
 
+class BIM_PT_tab_groups(Panel):
+    bl_idname = "BIM_PT_tab_groups"
+    bl_label = "Groups"
+    bl_space_type = "PROPERTIES"
+    bl_region_type = "WINDOW"
+    bl_context = "scene"
+    bim_tab_name = "PROJECT"
+
+    @classmethod
+    def poll(cls, context):
+        if tool.Blender.should_show_panel(context, cls.bim_tab_name, cls.bl_idname) and tool.Ifc.get():
+            return True
+
+    def draw(self, context):
+        pass
+
+
 class BIM_PT_tab_project_setup(Panel):
     bl_idname = "BIM_PT_tab_project_setup"
     bl_label = "Project Setup"
@@ -1178,7 +1187,7 @@ class BIM_PT_tab_collaboration(Panel):
 
 class BIM_PT_tab_grouping_and_filtering(Panel):
     bl_idname = "BIM_PT_tab_grouping_and_filtering"
-    bl_label = "Grouping and Filtering"
+    bl_label = "Search and Selection"
     bl_space_type = "PROPERTIES"
     bl_region_type = "WINDOW"
     bl_context = "scene"
