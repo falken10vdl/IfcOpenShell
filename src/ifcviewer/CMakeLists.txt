@@ -149,6 +149,8 @@ endif()
 set(IFCVIEWER_CORE_SOURCES
     AxisIndicatorRenderer.cpp
     BufferPool.cpp
+    GridHelperRenderer.cpp
+    ViewportFog.cpp
     ChunkPlanner.cpp
     InstanceCompose.cpp
     ModelLookup.cpp
@@ -201,6 +203,10 @@ endif()
 set(IFCVIEWER_CORE_HEADERS
     AxisIndicatorRenderer.h
     BufferPool.h
+    GridHelperRenderer.h
+    ViewportFog.h
+    ViewportFogWgsl.h
+    ViewportGridSpec.h
     CameraMath.h
     ChunkPlanner.h
     InstanceCompose.h
