@@ -135,9 +135,9 @@ class BIM_PT_section_plane(Panel):
     bl_label = "Temporary Section Cutaways"
     bl_space_type = "PROPERTIES"
     bl_region_type = "WINDOW"
-    bl_context = "output"
+    bl_context = "scene"
     bl_options = {"DEFAULT_CLOSED"}
-    bl_parent_id = "BIM_PT_tab_sandbox"
+    bl_parent_id = "BIM_PT_tab_drawings"
 
     def draw(self, context):
         assert self.layout
@@ -159,9 +159,9 @@ class BIM_PT_section_with_cappings(Panel):
     bl_label = "Section Cutaways With Cappings"
     bl_space_type = "PROPERTIES"
     bl_region_type = "WINDOW"
-    bl_context = "output"
+    bl_context = "scene"
     bl_options = {"DEFAULT_CLOSED"}
-    bl_parent_id = "BIM_PT_tab_sandbox"
+    bl_parent_id = "BIM_PT_tab_drawings"
 
     def draw(self, context):
         assert self.layout
