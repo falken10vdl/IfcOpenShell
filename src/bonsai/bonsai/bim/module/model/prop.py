@@ -1941,6 +1941,8 @@ class BIMFramingEntry(PropertyGroup):
             ("IfcDoor", "Doors", "Openings filled by a door"),
             ("IfcWindow", "Windows", "Openings filled by a window"),
             ("IfcOpeningElement", "Bare", "Openings with nothing in them"),
+            ("EDGE", "Edge", "Openings that reach a side of the framing, whatever fills them"),
+            ("HOLE", "Hole", "Openings inside the framing, whatever fills them"),
         ],
         options={"ENUM_FLAG"},
         default=set(),

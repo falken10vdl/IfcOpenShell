@@ -680,7 +680,7 @@ def _load_props(obj: bpy.types.Object) -> None:
         entry.jamb_height = member.get("jamb_height", "FULL")
         void_for = member.get("void_for") or []
         void_for = [void_for] if isinstance(void_for, str) else void_for
-        entry.void_for = {c for c in void_for if c in ("IfcDoor", "IfcWindow", "IfcOpeningElement")}
+        entry.void_for = {c for c in void_for if c in ("IfcDoor", "IfcWindow", "IfcOpeningElement", "EDGE", "HOLE")}
         if (profile := member.get("profile")) and str(profile.get("id")) in profile_ids:
             entry.profile = str(profile["id"])
         if material := constituents.get(entry.name):

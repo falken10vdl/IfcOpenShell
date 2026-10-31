@@ -1675,3 +1675,68 @@ class TestInlineVertices:
     def test_butt_corners_do_not_apply(self):
         layout = self.solve_frame([], butt_corners=True)
         assert us(layout, "Ends") == approx_list([0.05, 3.0, 5.95])
+
+
+class TestFramingEdgeOpeningsAndHoles:
+    HOLE_FRAMING = [
+        {"name": "Thin Jamb", "kind": "V", "void_role": "JAMB", "void_for": ["HOLE"]},
+        {"name": "Thin Head", "kind": "H", "void_role": "HEAD", "void_for": ["HOLE"]},
+        {"name": "Thin Sill", "kind": "H", "void_role": "SILL", "void_for": ["HOLE"]},
+    ]
+    EXTENTS = {
+        **FRAME_EXTENTS,
+        "Thin Jamb": (-0.01, 0.01),
+        "Thin Head": (-0.01, 0.01),
+        "Thin Sill": (-0.01, 0.01),
+    }
+
+    def solve(self, voids):
+        return solve(frame() + self.HOLE_FRAMING, segments=(6.0,), height=3.0, extents=self.EXTENTS, voids=voids)
+
+    def test_rectangular_hole_takes_its_own_framing(self):
+        layout = self.solve([subject.Void(2.0, 3.0, 1.0, 2.0)])
+        assert [m.entry for m in layout.verticals if m.address[1] < 0] == ["Thin Jamb", "Thin Jamb"]
+        assert sorted(m.entry for m in layout.horizontals if m.address[0] < 0) == ["Thin Head", "Thin Sill"]
+
+    def test_an_edge_opening_does_not(self):
+        layout = self.solve([subject.Void(2.0, 3.0, 0.0, 2.0)])
+        assert [m.entry for m in layout.verticals if m.address[1] < 0] == ["Ends", "Ends"]
+
+    def test_both_kinds_of_sloped_opening_are_told_apart(self):
+        hole = subject.Void(2.0, 4.0, 1.0, 2.0, outline=((2.0, 1.0), (4.0, 1.0), (4.0, 2.0), (2.5, 2.0)))
+        layout = self.solve([RAKED_TOP, hole])
+        assert sorted(m.entry for m in layout.inclined) == ["Thin Head", "Thin Jamb", "Thin Jamb", "Thin Sill", "Top"]
+
+    def test_near_points_make_no_edge_of_their_own(self):
+        hole = subject.Void(
+            2.0, 4.0, 1.0, 2.0, outline=((2.0, 1.0), (2.00005, 0.99999), (4.0, 1.0), (4.0, 2.0), (2.5, 2.0))
+        )
+        layout = self.solve([hole])
+        assert sorted(m.entry for m in layout.inclined) == ["Thin Head", "Thin Jamb", "Thin Jamb", "Thin Sill"]
+
+
+class TestRailsThroughOpenings:
+    def rails(self, **rail):
+        members = [
+            {"name": "Post", "kind": "V", "spacing": {"mode": "COUNT", "value": 1}, "at_ends": True},
+            {"name": "Rail", "kind": "H", "v": 1.5, "breaks_at": ["Post"], "cut_by_hole_voids": False, **rail},
+        ]
+        extents = {"Post": (-0.05, 0.05), "Rail": (-0.02, 0.02)}
+        return members, extents
+
+    def runs(self, void):
+        members, extents = self.rails()
+        layout = solve(members, segments=(6.0,), height=3.0, extents=extents, voids=[void])
+        return [(round(m.u_start, 3), round(m.u_end, 3)) for m in layout.by_entry("Rail") if m.address[0] >= 0]
+
+    def test_do_not_break_where_a_hole_removed_the_post(self):
+        # It breaks at the hole's jambs, which stand, but not at the post at 3.0, which does not.
+        assert self.runs(subject.Void(2.0, 4.0, 1.0, 2.0)) == [(0.05, 1.9), (2.0, 4.0), (4.1, 5.95)]
+
+    def test_nor_where_a_sloped_hole_did(self):
+        hole = subject.Void(2.0, 4.0, 1.0, 2.0, outline=((2.0, 1.0), (4.0, 1.0), (4.0, 2.0), (2.5, 2.0)))
+        assert self.runs(hole) == [(0.05, 5.95)]
+
+    def test_still_break_where_the_post_stands(self):
+        runs = self.runs(subject.Void(1.0, 2.0, 1.0, 2.0))
+        assert (2.1, 2.95) in runs and (3.05, 5.95) in runs

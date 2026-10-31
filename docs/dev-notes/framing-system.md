@@ -321,8 +321,10 @@ Doors, windows and bare openings in a storefront, curtain wall or stud wall.
     - Sloped openings stack every layer too, out from the edge: a double top plate
       parallel to a rake (user request). Joints at corners meet the neighbour's whole
       stack, so all layers end on the same lines.
-  - `void_for`: the filling classes the entry frames (`"IfcOpeningElement"` for none).
-    Empty means all, and entries naming the filling win.
+  - `void_for`: what the entry frames: filling classes (`"IfcOpeningElement"` for none),
+    or `"EDGE"` / `"HOLE"` for the kind of opening, any match counting (user request: a hole
+    framed with thin window jambs beside an edge opening framed by the wall's own members,
+    both bare). Empty means all, and entries naming the opening win.
 - **The head's span comes from the jamb heights, with no setting of its own.** It runs
   between the inner faces of the innermost `FULL` layer, and the `HEAD` layers inside it
   carry it. With no `FULL` layer, it runs over the outermost layer.
@@ -349,6 +351,8 @@ Doors, windows and bare openings in a storefront, curtain wall or stud wall.
     entry's `gap` at each cut.
   - Members not cut by an opening's kind run through it untouched, and can serve as its
     jamb or head.
+  - A rail does not break at a vertical an opening has removed at its height (`cut_away`),
+    so a member running through a hole stays whole there.
 - **Merge rules, by overlap.** A jamb layer that would overlap an existing member:
   - an end or corner member, another opening's jamb, or a run-through member serves as
     that jamb. Outer layers on that side are skipped, and the head ends on its inner face;
