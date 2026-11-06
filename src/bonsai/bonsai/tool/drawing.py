@@ -2929,7 +2929,6 @@ class Drawing(bonsai.core.tool.Drawing):
                     elements -= ifcopenshell.util.selector.filter_elements(ifc_file, exclude)
             except (json.JSONDecodeError, ValueError):
                 elements -= ifcopenshell.util.selector.filter_elements(ifc_file, exclude)
-                elements -= ifcopenshell.util.selector.filter_elements(ifc_file, exclude)
         elements -= set(ifc_file.by_type("IfcOpeningElement"))
         return elements
 
@@ -2953,7 +2952,6 @@ class Drawing(bonsai.core.tool.Drawing):
                 else:
                     elements -= ifcopenshell.util.selector.filter_elements(ifc_file, exclude)
             except (json.JSONDecodeError, ValueError):
-                elements -= ifcopenshell.util.selector.filter_elements(ifc_file, exclude)
                 elements -= ifcopenshell.util.selector.filter_elements(ifc_file, exclude)
         return elements
 
