@@ -31,6 +31,7 @@ from bpy.props import (
 )
 from bpy.types import PropertyGroup
 
+import bonsai.tool as tool
 from bonsai.bim.module.structural.data import (
     BoundaryConditionsData,
     LoadGroupDecorationData,
@@ -50,18 +51,28 @@ def update_activity_type(self: "BIMStructuralProperties", context: bpy.types.Con
     LoadGroupDecorationData.is_loaded = False
 
 
+def update_loads_display(self: "BIMStructuralProperties", context: bpy.types.Context) -> None:
+    from bonsai.bim.module.structural.decorator import LoadsDecorator
+
+    if LoadsDecorator.is_installed:
+        LoadsDecorator.update()
+        tool.Blender.update_all_viewports(context)
+
+
 def get_applicable_structural_load_types(
     self: "BIMStructuralProperties", context: bpy.types.Context
 ) -> list[tuple[str, str, str]]:
     if not StructuralLoadCasesData.is_loaded:
         StructuralLoadCasesData.load()
+    # Recomputed on every call so the choices follow the current selection.
+    StructuralLoadCasesData.data["applicable_structural_load_types"] = (
+        StructuralLoadCasesData.applicable_structural_load_types()
+    )
     return StructuralLoadCasesData.data["applicable_structural_load_types"]
 
 
 def updateApplicableStructuralLoadTypes(self: "BIMStructuralProperties", context: bpy.types.Context) -> None:
-    StructuralLoadCasesData.data["applicable_structural_load_types"] = (
-        StructuralLoadCasesData.applicable_structural_load_types()
-    )
+    StructuralLoadCasesData.data["applicable_structural_loads"] = StructuralLoadCasesData.applicable_structural_loads()
 
 
 def get_applicable_structural_loads(
@@ -161,7 +172,7 @@ class BIMStructuralProperties(PropertyGroup):
     structural_analysis_models: CollectionProperty(name="Structural Analysis Models", type=StructuralAnalysisModel)
     active_structural_analysis_model_index: IntProperty(name="Active Structural Analysis Model Index")
     active_structural_analysis_model_id: IntProperty(name="Active Structural Analysis Model Id")
-    load_case_editing_type: StringProperty(name="Load Case Editing Type")
+    current_structural_analysis_model_id: IntProperty(name="Current Structural Analysis Model Id")
     load_case_attributes: CollectionProperty(name="Load Case Attributes", type=Attribute)
     active_load_case_id: IntProperty(name="Active Load Case Id")
     load_group_editing_type: StringProperty(name="Load Group Editing Type")
@@ -201,6 +212,7 @@ class BIMStructuralProperties(PropertyGroup):
             ("LOCAL_COORDS", "Local", "Show loads in local reference frame"),
         ],
         name="Reference Frame",
+        update=update_loads_display,
     )
     activity_type: EnumProperty(
         items=[
@@ -211,7 +223,68 @@ class BIMStructuralProperties(PropertyGroup):
         name="Activity Type",
         update=update_activity_type,
     )
-    load_group_to_show: EnumProperty(items=get_load_groups_to_show, name="Load Groups")
+    load_group_to_show: EnumProperty(items=get_load_groups_to_show, name="Load Case", update=update_loads_display)
+    force_display: EnumProperty(
+        items=[
+            ("BOTH", "Both", "Show the resultant of point forces with their components"),
+            ("RESULTANT", "Resultant", "Show only the resultant of point forces"),
+            ("COMPONENTS", "Components", "Show only the X, Y and Z components of point forces"),
+            (
+                "PARALLELOGRAM",
+                "Parallelogram",
+                "Show each point force from its point, adding them into their resultant by the parallelogram law",
+            ),
+            (
+                "TIP_TO_TAIL",
+                "Tip-to-Tail",
+                "Show each point force tip to tail, with their resultant closing the chain",
+            ),
+        ],
+        name="Point Forces",
+        default="BOTH",
+        update=update_loads_display,
+    )
+    force_decimals: IntProperty(
+        name="Force Decimals",
+        description="Decimal places of force and moment values shown with loads",
+        default=2,
+        min=0,
+        max=8,
+        update=update_loads_display,
+    )
+    angle_decimals: IntProperty(
+        name="Angle Decimals",
+        description="Decimal places of angles shown with loads",
+        default=2,
+        min=0,
+        max=8,
+        update=update_loads_display,
+    )
+    show_force_angles: BoolProperty(
+        name="Angles",
+        description="Mark the angle of each point force from a horizontal reference axis",
+        default=True,
+        update=update_loads_display,
+    )
+    angle_reference: EnumProperty(
+        items=[
+            (
+                "HORIZONTAL",
+                "Nearest Horizontal",
+                "The acute angle from the nearest horizontal axis, as statics texts draw",
+            ),
+            ("POSITIVE_X", "+X Axis", "The angle counter-clockwise from the +X axis"),
+        ],
+        name="Angle From",
+        default="HORIZONTAL",
+        update=update_loads_display,
+    )
+    force_scale: FloatProperty(
+        name="Force Scale",
+        description="Force per unit length to draw point forces to scale. Zero fits them automatically",
+        min=0,
+        update=update_loads_display,
+    )
 
     if TYPE_CHECKING:
         structural_analysis_model_attributes: bpy.types.bpy_prop_collection_idprop[Attribute]
@@ -219,7 +292,7 @@ class BIMStructuralProperties(PropertyGroup):
         structural_analysis_models: bpy.types.bpy_prop_collection_idprop[StructuralAnalysisModel]
         active_structural_analysis_model_index: int
         active_structural_analysis_model_id: int
-        load_case_editing_type: str
+        current_structural_analysis_model_id: int
         load_case_attributes: bpy.types.bpy_prop_collection_idprop[Attribute]
         active_load_case_id: int
         load_group_editing_type: str
@@ -251,6 +324,12 @@ class BIMStructuralProperties(PropertyGroup):
         reference_frame: str
         activity_type: str
         load_group_to_show: str
+        force_display: str
+        force_scale: float
+        show_force_angles: bool
+        angle_reference: str
+        force_decimals: int
+        angle_decimals: int
 
 
 class BIMObjectStructuralProperties(PropertyGroup):
