@@ -22,7 +22,7 @@ import bpy
 
 import bonsai.tool as tool
 
-from . import gizmos, handler, operator, prop, ui, workspace
+from . import decoration, gizmos, handler, operator, prop, ui, workspace
 
 classes = (
     operator.ActivateDrawing,
@@ -205,6 +205,7 @@ def register():
 
 
 def unregister():
+    decoration.SvgOverlay.uninstall()
     if not bpy.app.background:
         bpy.utils.unregister_tool(workspace.AnnotationTool)
     del bpy.types.Scene.DocProperties
