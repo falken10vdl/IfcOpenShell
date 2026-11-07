@@ -91,6 +91,7 @@ classes = (
     wall.AddWallsFromSlab,
     wall.AlignWall,
     wall.CancelEditingWall,
+    wall.ConvertToParametricWall,
     wall.ChangeExtrusionDepth,
     wall.ChangeExtrusionXAngle,
     wall.ChangeLayerLength,
