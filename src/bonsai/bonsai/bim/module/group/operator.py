@@ -52,6 +52,7 @@ def run_routed(operator: bpy.types.Operator, routed_operator, **kwargs) -> set[s
 class LoadGroups(bpy.types.Operator, tool.Ifc.Operator):
     bl_idname = "bim.load_groups"
     bl_label = "Load Groups"
+    bl_description = "Load the list of groups in the project for editing"
     bl_options = {"REGISTER", "UNDO"}
 
     def _execute(self, context):
@@ -64,6 +65,7 @@ class LoadGroups(bpy.types.Operator, tool.Ifc.Operator):
 class ToggleGroup(bpy.types.Operator, tool.Ifc.Operator):
     bl_idname = "bim.toggle_group"
     bl_label = "Toggle Group"
+    bl_description = "Expand or collapse the group in the groups tree"
     bl_options = {"REGISTER", "UNDO"}
 
     ifc_definition_id: bpy.props.IntProperty()
@@ -88,6 +90,7 @@ class ToggleGroup(bpy.types.Operator, tool.Ifc.Operator):
 class DisableGroupEditingUI(bpy.types.Operator, tool.Ifc.Operator):
     bl_idname = "bim.disable_group_editing_ui"
     bl_label = "Disable Group Editing UI"
+    bl_description = "Close the groups tree"
     bl_options = {"REGISTER", "UNDO"}
 
     def _execute(self, context):
@@ -211,6 +214,7 @@ class DisableEditingObjectGroups(bpy.types.Operator):
 class EditGroup(bpy.types.Operator, tool.Ifc.Operator):
     bl_idname = "bim.edit_group"
     bl_label = "Edit Group"
+    bl_description = "Save the edited attributes to the group"
     bl_options = {"REGISTER", "UNDO"}
 
     def _execute(self, context):
@@ -225,6 +229,7 @@ class EditGroup(bpy.types.Operator, tool.Ifc.Operator):
 class RemoveGroup(bpy.types.Operator, tool.Ifc.Operator):
     bl_idname = "bim.remove_group"
     bl_label = "Remove Group"
+    bl_description = "Remove the group from the project"
     bl_options = {"REGISTER", "UNDO"}
     group: bpy.props.IntProperty()
 
@@ -252,6 +257,7 @@ class RemoveGroup(bpy.types.Operator, tool.Ifc.Operator):
 class EnableEditingGroup(bpy.types.Operator, tool.Ifc.Operator):
     bl_idname = "bim.enable_editing_group"
     bl_label = "Enable Editing Group"
+    bl_description = "Load the attributes of the selected group for editing"
     bl_options = {"REGISTER", "UNDO"}
     group: bpy.props.IntProperty()
 
@@ -267,6 +273,7 @@ class EnableEditingGroup(bpy.types.Operator, tool.Ifc.Operator):
 class DisableEditingGroup(bpy.types.Operator, tool.Ifc.Operator):
     bl_idname = "bim.disable_editing_group"
     bl_label = "Disable Editing Group"
+    bl_description = "Close the group editing form without saving changes"
     bl_options = {"REGISTER", "UNDO"}
 
     def _execute(self, context):
