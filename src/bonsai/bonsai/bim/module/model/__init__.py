@@ -128,6 +128,7 @@ classes = (
     wall.RotateWall90,
     wall.SplitWall,
     wall.SplitWallAtCursor,
+    wall.TrimWall,
     wall.DisconnectElements,
     wall.UnjoinWalls,
     wall.EnableWallFilletPreview,
