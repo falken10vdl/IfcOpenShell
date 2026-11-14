@@ -400,7 +400,11 @@ class TestGenerateStructuralModel(NewIfc):
             ifcopenshell.api.structural.assign_product(ifc, relating_product=member, related_object=source)
 
         assert tool.Structural.get_changed_generated_models() == {model.id()}
-        assert bpy.ops.bim.generate_structural_model(sync_only=True, structural_model=model.id()) == {"FINISHED"}
+        changes = tool.Structural.get_member_changes(model)
+        assert [change["reason"] for change in changes] == [
+            "MISSING_SOURCE" if source_count == 0 else "MULTIPLE_SOURCES"
+        ]
+        assert bpy.ops.bim.update_structural_model(structural_model=model.id()) == {"FINISHED"}
         assert "missing or ambiguous source relationships" in capsys.readouterr().out
         assert member in ifc.by_type("IfcStructuralCurveMember")
 
@@ -460,13 +464,34 @@ class TestGenerateStructuralModel(NewIfc):
         bpy.context.view_layer.update()
         assert tool.Structural.get_changed_generated_models() == {model.id()}
         assert tool.Ifc.get_object(member).location.x == pytest.approx(0)
+        ifc_before_check = ifc.to_string()
+        history_before_check = len(IfcStore.history)
+        changes = tool.Structural.get_member_changes(model)
+        assert len(changes) == 1
+        assert changes[0]["member"] == member and changes[0]["source"] == source
+        assert [point["endpoint"] for point in changes[0]["points"]] == ["Start", "End"]
+        assert changes[0]["points"][0]["member_point"][0] == pytest.approx(0)
+        assert changes[0]["points"][0]["source_point"][0] == pytest.approx(2)
+        assert changes[0]["points"][0]["distance"] == pytest.approx(2)
+        assert changes[0]["tolerance"] >= props.generation_merge_tolerance
         layout = MagicMock()
         BIM_PT_generate_structural_model.draw(SimpleNamespace(layout=layout), bpy.context)
         layout.label.assert_called_with(text="Linked members have changed or missing sources", icon="ERROR")
-        layout.operator.assert_any_call(
-            "bim.generate_structural_model", text="Refresh Linked Members", icon="FILE_REFRESH"
+        layout.operator.assert_any_call("bim.update_structural_model", icon="FILE_REFRESH")
+        layout.box.return_value.label.assert_any_call(
+            text=f"Difference: 2 m; tolerance: {changes[0]['tolerance']:.6g} m"
         )
-        bpy.ops.bim.generate_structural_model(sync_only=True)
+        assert ifc.to_string() == ifc_before_check
+        assert len(IfcStore.history) == history_before_check
+        previous_transaction = IfcStore.history[-1]["key"]
+        assert bpy.ops.bim.update_structural_model(structural_model=model.id()) == {"FINISHED"}
+        assert len(IfcStore.history) == history_before_check + 1
+        update_transaction = IfcStore.history[-1]["key"]
+        ifc_after_update = ifc.to_string()
+        IfcStore.undo(until_key=previous_transaction)
+        assert ifc.to_string() == ifc_before_check
+        IfcStore.redo(until_key=update_transaction)
+        assert ifc.to_string() == ifc_after_update
         assert tool.Ifc.get_object(member).location.x == pytest.approx(2)
         assert not tool.Structural.get_changed_generated_models()
         assert not ifcopenshell.util.element.get_pset(model, "BBIM_StructuralGeneration")
@@ -476,6 +501,12 @@ class TestGenerateStructuralModel(NewIfc):
         assert set(ifcopenshell.util.element.get_pset(member, "BBIM_StructuralGeneration")) == {"id", "Keep"}
         member_obj = tool.Ifc.get_object(member)
         tool.Structural.get_structural_props().generation_merge_tolerance = 0.1
+        member_obj.data.vertices[1].co.x = 0.3
+        bpy.context.view_layer.update()
+        changes = tool.Structural.get_member_changes(model)
+        assert [point["endpoint"] for point in changes[0]["points"]] == ["End"]
+        assert changes[0]["points"][0]["distance"] == pytest.approx(0.3)
+        member_obj.data.vertices[1].co.x = 0
         member_obj.location.x = 2.05
         bpy.context.view_layer.update()
         assert not tool.Structural.get_changed_generated_models()
@@ -483,7 +514,7 @@ class TestGenerateStructuralModel(NewIfc):
         bpy.context.view_layer.update()
         assert tool.Structural.get_changed_generated_models() == {model.id()}
         assert member_obj.location.x == pytest.approx(2.15)
-        bpy.ops.bim.generate_structural_model(sync_only=True)
+        bpy.ops.bim.update_structural_model(structural_model=model.id())
         assert member_obj.location.x == pytest.approx(2)
         tool.Geometry.delete_ifc_object(obj)
         assert tool.Structural.get_changed_generated_models() == {model.id()}
@@ -543,6 +574,13 @@ class TestGenerateStructuralModel(NewIfc):
                 member = relation.RelatingProduct
                 relation.RelatingProduct = source
                 relation.RelatedObjects = [member]
+        source_obj = tool.Ifc.get_object(sources[0])
+        source_obj.location.x = 1
+        bpy.context.view_layer.update()
+        changes = tool.Structural.get_member_changes(model)
+        assert len(changes) == 1 and changes[0]["source"] == sources[0]
+        source_obj.location.x = 0
+        bpy.context.view_layer.update()
         assert set(model.IsGroupedBy[0].RelatedObjects) == set(members + points)
         assert all(tool.Ifc.get_object(item) for item in members + points)
         bpy.ops.bim.generate_structural_model()

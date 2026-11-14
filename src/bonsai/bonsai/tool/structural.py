@@ -21,7 +21,7 @@ from __future__ import annotations
 import fractions
 import json
 import math
-from typing import TYPE_CHECKING, Any, Union
+from typing import TYPE_CHECKING, Any, Literal, TypedDict, Union
 
 import bpy
 import ifcopenshell
@@ -47,6 +47,21 @@ if TYPE_CHECKING:
         BIMObjectStructuralProperties,
         BIMStructuralProperties,
     )
+
+
+class StructuralAxisChange(TypedDict):
+    endpoint: str
+    member_point: tuple[float, float, float]
+    source_point: tuple[float, float, float]
+    distance: float
+
+
+class StructuralMemberChange(TypedDict):
+    member: ifcopenshell.entity_instance
+    source: Union[ifcopenshell.entity_instance, None]
+    reason: Literal["AXIS", "MISSING_SOURCE", "MULTIPLE_SOURCES", "UNAVAILABLE"]
+    tolerance: float
+    points: list[StructuralAxisChange]
 
 
 class Structural(bonsai.core.tool.Structural):
@@ -140,34 +155,57 @@ class Structural(bonsai.core.tool.Structural):
         file = tool.Ifc.get()
         if not file:
             return set()
-        changed_models = set()
+        return {model.id() for model in file.by_type("IfcStructuralAnalysisModel") if cls.get_member_changes(model)}
+
+    @classmethod
+    def get_member_changes(cls, model: ifcopenshell.entity_instance) -> list[StructuralMemberChange]:
+        changes: list[StructuralMemberChange] = []
         props = cls.get_structural_props()
         tolerance = max(props.generation_merge_tolerance, 1e-8)
-        tracked = {(item.model_guid, item.member_guid) for item in props.generation_links}
-        tracked_members = {member_guid for _, member_guid in tracked}
-        for member in file.by_type("IfcStructuralCurveMember"):
-            sources = ifcopenshell.util.structural.get_building_elements(member)
-            if not sources and member.GlobalId not in tracked_members:
+        tracked = {item.member_guid for item in props.generation_links if item.model_guid == model.GlobalId}
+        for member in cls.get_analysis_model_members(model):
+            if not member.is_a("IfcStructuralCurveMember"):
                 continue
-            if len(sources) == 1:
-                source_obj = tool.Ifc.get_object(sources[0])
-                member_obj = tool.Ifc.get_object(member)
-                axis = cls.get_physical_member_axis(source_obj) if source_obj else None
-                if axis is None or not member_obj or member_obj.type != "MESH" or len(member_obj.data.vertices) != 2:
-                    continue
-                member_axis = np.array([member_obj.matrix_world @ vertex.co for vertex in member_obj.data.vertices])
-                # Blender mesh coordinates and transforms use single precision.
-                precision = 2 * np.finfo(np.float32).eps * max(1.0, np.abs(member_axis).max(), np.abs(axis).max())
-                if np.all(np.linalg.norm(member_axis - axis, axis=1) <= max(tolerance, precision)):
-                    continue
-            for assignment in member.HasAssignments or ():
-                if assignment.is_a("IfcRelAssignsToGroup") and assignment.RelatingGroup.is_a(
-                    "IfcStructuralAnalysisModel"
-                ):
-                    if not sources and (assignment.RelatingGroup.GlobalId, member.GlobalId) not in tracked:
-                        continue
-                    changed_models.add(assignment.RelatingGroup.id())
-        return changed_models
+            sources = ifcopenshell.util.structural.get_building_elements(member)
+            if not sources and member.GlobalId not in tracked:
+                continue
+            change: StructuralMemberChange = {
+                "member": member,
+                "source": sources[0] if len(sources) == 1 else None,
+                "reason": "MISSING_SOURCE" if not sources else "MULTIPLE_SOURCES",
+                "tolerance": tolerance,
+                "points": [],
+            }
+            if len(sources) != 1:
+                changes.append(change)
+                continue
+            source_obj = tool.Ifc.get_object(sources[0])
+            member_obj = tool.Ifc.get_object(member)
+            axis = cls.get_physical_member_axis(source_obj) if source_obj else None
+            if axis is None or not member_obj or member_obj.type != "MESH" or len(member_obj.data.vertices) != 2:
+                change["reason"] = "UNAVAILABLE"
+                changes.append(change)
+                continue
+            member_axis = np.array([member_obj.matrix_world @ vertex.co for vertex in member_obj.data.vertices])
+            # Blender mesh coordinates and transforms use single precision.
+            precision = 2 * np.finfo(np.float32).eps * max(1.0, np.abs(member_axis).max(), np.abs(axis).max())
+            change["tolerance"] = float(max(tolerance, precision))
+            change["reason"] = "AXIS"
+            for index, endpoint in enumerate(("Start", "End")):
+                member_point, source_point = member_axis[index], axis[index]
+                distance = float(np.linalg.norm(member_point - source_point))
+                if distance > change["tolerance"]:
+                    change["points"].append(
+                        {
+                            "endpoint": endpoint,
+                            "member_point": (float(member_point[0]), float(member_point[1]), float(member_point[2])),
+                            "source_point": (float(source_point[0]), float(source_point[1]), float(source_point[2])),
+                            "distance": distance,
+                        }
+                    )
+            if change["points"]:
+                changes.append(change)
+        return changes
 
     @classmethod
     def is_generated_connection(cls, connection):

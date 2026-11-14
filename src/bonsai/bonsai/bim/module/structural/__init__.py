@@ -30,6 +30,7 @@ classes = (
     operator.ToggleStructuralModelMemberVisibility,
     operator.ShowStructuralModelMembers,
     operator.GenerateStructuralModel,
+    operator.UpdateStructuralModel,
     operator.EditStructuralAnalysisModel,
     operator.RemoveStructuralAnalysisModel,
     operator.AssignStructuralAnalysisModel,

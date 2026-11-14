@@ -521,14 +521,10 @@ class ShowStructuralModelMembers(bpy.types.Operator):
         return {"FINISHED"}
 
 
-class GenerateStructuralModel(bpy.types.Operator, tool.Ifc.Operator):
-    bl_idname = "bim.generate_structural_model"
-    bl_label = "Generate from Selected"
-    bl_description = "Generate or refresh structural members from profile beams and columns"
-    bl_options = {"REGISTER", "UNDO"}
-    sync_only: bpy.props.BoolProperty(default=False, options={"HIDDEN", "SKIP_SAVE"})
-    adopt_selected: bpy.props.BoolProperty(default=False, options={"HIDDEN", "SKIP_SAVE"})
-    structural_model: bpy.props.IntProperty(default=0, options={"HIDDEN", "SKIP_SAVE"})
+class StructuralModelGeneration(bpy.types.Operator, tool.Ifc.Operator):
+    sync_only: bool
+    adopt_selected: bool
+    structural_model: int
 
     def _execute(self, context):
         file = tool.Ifc.get()
@@ -858,13 +854,33 @@ class GenerateStructuralModel(bpy.types.Operator, tool.Ifc.Operator):
             self.report(
                 {"WARNING"}, f"Refreshed {len(updates)} structural members; skipped {skipped} unsupported objects"
             )
-        elif self.sync_only and self.adopt_selected:
+        elif self.sync_only:
             self.report({"INFO"}, f"Refreshed {len(updates)} structural members")
         elif not self.sync_only:
             self.report(
                 {"INFO"}, f"Created {created}, updated {len(updates)} structural members; skipped {skipped} objects"
             )
         return {"FINISHED"}
+
+
+class GenerateStructuralModel(StructuralModelGeneration):
+    bl_idname = "bim.generate_structural_model"
+    bl_label = "Generate from Selected"
+    bl_description = "Generate or refresh structural members from profile beams and columns"
+    bl_options = {"REGISTER", "UNDO"}
+    sync_only: bpy.props.BoolProperty(default=False, options={"HIDDEN", "SKIP_SAVE"})
+    adopt_selected: bpy.props.BoolProperty(default=False, options={"HIDDEN", "SKIP_SAVE"})
+    structural_model: bpy.props.IntProperty(default=0, options={"HIDDEN", "SKIP_SAVE"})
+
+
+class UpdateStructuralModel(StructuralModelGeneration):
+    bl_idname = "bim.update_structural_model"
+    bl_label = "Update Structural Model"
+    bl_description = "Update linked structural members from their physical elements"
+    bl_options = {"REGISTER", "UNDO"}
+    sync_only = True
+    adopt_selected = False
+    structural_model: bpy.props.IntProperty(default=0, options={"HIDDEN", "SKIP_SAVE"})
 
 
 class LoadStructuralAnalysisModels(bpy.types.Operator):
