@@ -1,5 +1,6 @@
 # This file was generated with the assistance of an AI coding tool.
 
+import json
 from types import SimpleNamespace
 from unittest import mock
 from unittest.mock import MagicMock
@@ -14,6 +15,7 @@ import ifcopenshell.api.profile
 import ifcopenshell.api.pset
 import ifcopenshell.api.root
 import ifcopenshell.api.structural
+import ifcopenshell.util.structural
 import numpy as np
 import pytest
 from mathutils import Vector
@@ -130,7 +132,8 @@ class TestPickLoads:
 
 
 class TestShowStructuralModelMembers(NewIfc):
-    def test_member_details_include_section_material_load_and_connection(self):
+    @pytest.mark.parametrize("reverse_link", [False, True])
+    def test_member_details_include_section_material_load_and_connection(self, reverse_link):
         ifc = tool.Ifc.get()
         model = ifcopenshell.api.structural.add_structural_analysis_model(ifc)
         member = ifcopenshell.api.root.create_entity(ifc, ifc_class="IfcStructuralCurveMember", name="Analysis beam")
@@ -138,7 +141,10 @@ class TestShowStructuralModelMembers(NewIfc):
             ifc, products=[member], structural_analysis_model=model
         )
         source = ifcopenshell.api.root.create_entity(ifc, ifc_class="IfcBeam", name="Physical beam")
-        ifcopenshell.api.structural.assign_product(ifc, relating_product=member, related_object=source)
+        if reverse_link:
+            ifcopenshell.api.structural.assign_product(ifc, relating_product=source, related_object=member)
+        else:
+            ifcopenshell.api.structural.assign_product(ifc, relating_product=member, related_object=source)
         profile = ifcopenshell.api.profile.add_parameterized_profile(ifc, ifc_class="IfcRectangleProfileDef")
         profile.ProfileName, profile.XDim, profile.YDim = "Rectangle", 0.2, 0.3
         profile_pset = ifcopenshell.api.pset.add_pset(ifc, product=profile, name="SectionMechanics")
@@ -381,10 +387,33 @@ class TestGenerateStructuralModel(NewIfc):
         BIM_PT_generate_structural_model.draw(SimpleNamespace(layout=layout), bpy.context)
         layout.operator.assert_called_once_with("bim.generate_structural_model", icon="MOD_SIMPLIFY")
 
+    @pytest.mark.parametrize("source_count", [0, 2])
+    def test_missing_or_ambiguous_source_preserves_member(self, source_count, capsys):
+        ifc = tool.Ifc.get()
+        model = ifcopenshell.api.structural.add_structural_analysis_model(ifc)
+        member = ifcopenshell.api.root.create_entity(ifc, ifc_class="IfcStructuralCurveMember")
+        ifcopenshell.api.structural.assign_structural_analysis_model(
+            ifc, products=[member], structural_analysis_model=model
+        )
+        unrelated = ifcopenshell.api.root.create_entity(ifc, ifc_class="IfcColumn")
+        pset = ifcopenshell.api.pset.add_pset(ifc, product=member, name="BBIM_StructuralGeneration")
+        ifcopenshell.api.pset.edit_pset(
+            ifc, pset=pset, properties={"Source": unrelated.GlobalId, "SourceAxis": "[[0, 0, 0], [0, 0, 1]]"}
+        )
+        for _ in range(source_count):
+            source = ifcopenshell.api.root.create_entity(ifc, ifc_class="IfcColumn")
+            ifcopenshell.api.structural.assign_product(ifc, relating_product=member, related_object=source)
+
+        assert tool.Structural.get_changed_generated_models() == {model.id()}
+        assert bpy.ops.bim.generate_structural_model(sync_only=True, structural_model=model.id()) == {"FINISHED"}
+        assert "missing or ambiguous source relationships" in capsys.readouterr().out
+        assert member in ifc.by_type("IfcStructuralCurveMember")
+
     @pytest.mark.parametrize(
         "selected,sync_only,adopt", [(True, True, True), (False, True, True), (True, True, False), (True, False, False)]
     )
-    def test_refresh_selected_legacy_member(self, selected, sync_only, adopt):
+    @pytest.mark.parametrize("reverse_link", [False, True])
+    def test_refresh_selected_legacy_member(self, selected, sync_only, adopt, reverse_link):
         ifc = tool.Ifc.get()
         model_context = ifcopenshell.util.representation.get_context(ifc, "Model")
         body = ifcopenshell.api.context.add_context(
@@ -406,6 +435,10 @@ class TestGenerateStructuralModel(NewIfc):
         bpy.context.view_layer.update()
         bpy.ops.bim.generate_structural_model()
         member = ifc.by_type("IfcStructuralCurveMember")[0]
+        if reverse_link:
+            relation = next(rel for rel in source.HasAssignments if rel.is_a("IfcRelAssignsToProduct"))
+            relation.RelatingProduct = source
+            relation.RelatedObjects = [member]
         pset_id = ifcopenshell.util.element.get_pset(member, "BBIM_StructuralGeneration")["id"]
         ifcopenshell.api.pset.remove_pset(ifc, product=member, pset=ifc.by_id(pset_id))
         nodes = ifc.by_type("IfcStructuralPointConnection")
@@ -419,7 +452,8 @@ class TestGenerateStructuralModel(NewIfc):
         bpy.ops.bim.generate_structural_model(sync_only=sync_only, adopt_selected=adopt)
         if selected and (adopt or not sync_only):
             assert tool.Ifc.get_object(member).location.x == pytest.approx(2)
-            assert ifcopenshell.util.element.get_pset(member, "BBIM_StructuralGeneration", "Source") == source.GlobalId
+            assert ifcopenshell.util.structural.get_building_elements(member) == [source]
+            assert "Source" not in ifcopenshell.util.element.get_pset(member, "BBIM_StructuralGeneration")
             assert all(
                 ifcopenshell.util.element.get_pset(node, "BBIM_StructuralGeneration", "Generated") for node in nodes
             )
@@ -430,15 +464,16 @@ class TestGenerateStructuralModel(NewIfc):
             assert tool.Ifc.get_object(member).location.x == pytest.approx(3)
             tool.Geometry.delete_ifc_object(obj)
             sync_generated_sources()
-            assert not ifc.by_type("IfcStructuralCurveMember")
-            assert not ifc.by_type("IfcStructuralPointConnection")
+            assert member in ifc.by_type("IfcStructuralCurveMember")
+            assert len(ifc.by_type("IfcStructuralPointConnection")) == 2
         else:
             assert tool.Ifc.get_object(member).location.x == pytest.approx(0)
             assert not ifcopenshell.util.element.get_pset(member, "BBIM_StructuralGeneration")
             assert len(ifc.by_type("IfcStructuralCurveMember")) == 1
 
     @pytest.mark.parametrize("tolerance,point_count", [(0.0, 4), (0.1, 3)])
-    def test_selected_columns_are_connected_and_assigned(self, tolerance, point_count):
+    @pytest.mark.parametrize("reverse_link", [False, True])
+    def test_selected_columns_are_connected_and_assigned(self, tolerance, point_count, reverse_link):
         ifc = tool.Ifc.get()
         model_context = ifcopenshell.util.representation.get_context(ifc, "Model")
         body = ifcopenshell.api.context.add_context(
@@ -476,6 +511,20 @@ class TestGenerateStructuralModel(NewIfc):
             for item in members + points
         )
         assert all(any(rel.RelatingProduct in members for rel in source.HasAssignments) for source in sources)
+        assert all(
+            "Source" not in ifcopenshell.util.element.get_pset(member, "BBIM_StructuralGeneration")
+            for member in members
+        )
+        if reverse_link:
+            for source in sources:
+                relation = next(rel for rel in source.HasAssignments if rel.is_a("IfcRelAssignsToProduct"))
+                member = relation.RelatingProduct
+                relation.RelatingProduct = source
+                relation.RelatedObjects = [member]
+        pset_id = ifcopenshell.util.element.get_pset(members[0], "BBIM_StructuralGeneration")["id"]
+        linked_source = ifcopenshell.util.structural.get_building_elements(members[0])[0]
+        wrong_source = next(source for source in sources if source != linked_source)
+        ifcopenshell.api.pset.edit_pset(ifc, pset=ifc.by_id(pset_id), properties={"Source": wrong_source.GlobalId})
         assert set(model.IsGroupedBy[0].RelatedObjects) == set(members + points)
         assert all(tool.Ifc.get_object(item) for item in members + points)
         tool.Structural.get_structural_props().generation_merge_tolerance = 0
@@ -493,14 +542,20 @@ class TestGenerateStructuralModel(NewIfc):
         bpy.app.timers.unregister(sync_generated_sources)
         bpy.ops.bim.generate_structural_model(sync_only=True)
         assert not tool.Structural.get_changed_generated_models()
+        assert "Source" not in ifcopenshell.util.element.get_pset(members[0], "BBIM_StructuralGeneration")
         for member in members:
             assert tool.Ifc.get_object(member).location.x == pytest.approx(original_positions[member.id()].x + 2)
+            source = ifcopenshell.util.structural.get_building_elements(member)[0]
+            source_axis = ifcopenshell.util.element.get_pset(member, "BBIM_StructuralGeneration", "SourceAxis")
+            assert np.allclose(
+                json.loads(source_axis), tool.Structural.get_physical_member_axis(tool.Ifc.get_object(source))
+            )
         assert len(ifc.by_type("IfcStructuralPointConnection")) == point_count
         source = sources[1]
         extrusion = ifcopenshell.util.representation.get_representation(source, "Model", "Body", "MODEL_VIEW").Items[0]
         extrusion.Depth += 1 / ifcopenshell.util.unit.calculate_unit_scale(ifc)
         sync_generated_sources()
-        member = next(rel.RelatingProduct for rel in source.HasAssignments if rel.is_a("IfcRelAssignsToProduct"))
+        member = ifcopenshell.util.structural.get_structural_members(source)[0]
         assert tool.Ifc.get_object(member).data.vertices[1].co.length == pytest.approx(4, abs=0.1)
         shared_node = next(
             (node for node in ifc.by_type("IfcStructuralPointConnection") if len(node.ConnectsStructuralMembers) == 2),
@@ -519,9 +574,7 @@ class TestGenerateStructuralModel(NewIfc):
         assert len(ifc.by_type("IfcRelConnectsStructuralMember")) == 4
         if shared_condition:
             assert shared_node.AppliedCondition == shared_condition
-        rotated_member = next(
-            rel.RelatingProduct for rel in sources[0].HasAssignments if rel.is_a("IfcRelAssignsToProduct")
-        )
+        rotated_member = ifcopenshell.util.structural.get_structural_members(sources[0])[0]
         direction = np.array(tool.Ifc.get_object(rotated_member).data.vertices[1].co)
         assert np.dot(direction, rotated_member.Axis.DirectionRatios) == pytest.approx(0, abs=1e-6)
         tool.Ifc.get_object(sources[0]).location.x -= 1
@@ -545,9 +598,7 @@ class TestGenerateStructuralModel(NewIfc):
         bpy.ops.bim.generate_structural_model()
         assert len(ifc.by_type("IfcStructuralCurveMember")) == 3
         assert len(ifc.by_type("IfcStructuralPointConnection")) == (4 if tolerance else 6)
-        removed_member = next(
-            rel.RelatingProduct for rel in sources[0].HasAssignments if rel.is_a("IfcRelAssignsToProduct")
-        )
+        removed_member = ifcopenshell.util.structural.get_structural_members(sources[0])[0]
         load = ifcopenshell.api.structural.add_structural_load(ifc)
         activity = ifcopenshell.api.structural.add_structural_activity(
             ifc, applied_load=load, structural_member=removed_member, ifc_class="IfcStructuralLinearAction"
@@ -563,10 +614,10 @@ class TestGenerateStructuralModel(NewIfc):
         tool.Geometry.delete_ifc_object(tool.Ifc.get_object(sources[0]))
         assert tool.Structural.get_changed_generated_models() == {model.id()}
         sync_generated_sources()
-        assert len(ifc.by_type("IfcStructuralCurveMember")) == 2
-        assert len(ifc.by_type("IfcStructuralPointConnection")) == (3 if tolerance else 4)
-        assert len(ifc.by_type("IfcRelConnectsStructuralMember")) == 4
-        assert all(item.id() != activity_id for item in ifc.by_type("IfcStructuralActivity"))
-        assert all(item.id() != condition_id for item in ifc.by_type("IfcBoundaryCondition"))
+        assert removed_member in ifc.by_type("IfcStructuralCurveMember")
+        assert len(ifc.by_type("IfcStructuralPointConnection")) == (4 if tolerance else 6)
+        assert len(ifc.by_type("IfcRelConnectsStructuralMember")) == 6
+        assert any(item.id() == activity_id for item in ifc.by_type("IfcStructuralActivity"))
+        assert any(item.id() == condition_id for item in ifc.by_type("IfcBoundaryCondition"))
         if shared_condition:
             assert shared_node.AppliedCondition == shared_condition

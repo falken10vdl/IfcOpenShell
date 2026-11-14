@@ -31,6 +31,7 @@ import ifcopenshell.util.attribute
 import ifcopenshell.util.element
 import ifcopenshell.util.placement
 import ifcopenshell.util.representation
+import ifcopenshell.util.structural
 import ifcopenshell.util.unit
 import numpy as np
 
@@ -143,14 +144,11 @@ class Structural(bonsai.core.tool.Structural):
         changed_models = set()
         for member in file.by_type("IfcStructuralCurveMember"):
             data = ifcopenshell.util.element.get_pset(member, "BBIM_StructuralGeneration")
-            if not data or not data.get("Source") or not data.get("SourceAxis"):
+            if not data or not data.get("SourceAxis"):
                 continue
-            try:
-                source = file.by_guid(data["Source"])
-            except RuntimeError:
-                source = None
-            if source:
-                obj = tool.Ifc.get_object(source)
+            sources = ifcopenshell.util.structural.get_building_elements(member)
+            if len(sources) == 1:
+                obj = tool.Ifc.get_object(sources[0])
                 axis = cls.get_physical_member_axis(obj) if obj else None
                 if axis is None or np.allclose(axis, json.loads(data["SourceAxis"]), atol=1e-8, rtol=0):
                     continue

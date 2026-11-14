@@ -24,6 +24,7 @@ import ifcopenshell
 import ifcopenshell.util.doc
 import ifcopenshell.util.element
 import ifcopenshell.util.shape
+import ifcopenshell.util.structural
 import ifcopenshell.util.unit
 
 import bonsai.tool as tool
@@ -272,12 +273,7 @@ class StructuralModelMemberData:
 
     @classmethod
     def load(cls, member):
-        sources = [
-            source
-            for relation in member.ReferencedBy or ()
-            for source in relation.RelatedObjects
-            if source.is_a("IfcElement")
-        ]
+        sources = ifcopenshell.util.structural.get_building_elements(member)
         source = sources[0] if len(sources) == 1 else None
 
         def profiles_of(product):
