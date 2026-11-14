@@ -28,7 +28,6 @@ import ifcopenshell
 import ifcopenshell.api.context
 import ifcopenshell.api.structural
 import ifcopenshell.util.attribute
-import ifcopenshell.util.element
 import ifcopenshell.util.placement
 import ifcopenshell.util.representation
 import ifcopenshell.util.structural
@@ -142,22 +141,47 @@ class Structural(bonsai.core.tool.Structural):
         if not file:
             return set()
         changed_models = set()
+        props = cls.get_structural_props()
+        tolerance = max(props.generation_merge_tolerance, 1e-8)
+        tracked = {(item.model_guid, item.member_guid) for item in props.generation_links}
+        tracked_members = {member_guid for _, member_guid in tracked}
         for member in file.by_type("IfcStructuralCurveMember"):
-            data = ifcopenshell.util.element.get_pset(member, "BBIM_StructuralGeneration")
-            if not data or not data.get("SourceAxis"):
-                continue
             sources = ifcopenshell.util.structural.get_building_elements(member)
+            if not sources and member.GlobalId not in tracked_members:
+                continue
             if len(sources) == 1:
-                obj = tool.Ifc.get_object(sources[0])
-                axis = cls.get_physical_member_axis(obj) if obj else None
-                if axis is None or np.allclose(axis, json.loads(data["SourceAxis"]), atol=1e-8, rtol=0):
+                source_obj = tool.Ifc.get_object(sources[0])
+                member_obj = tool.Ifc.get_object(member)
+                axis = cls.get_physical_member_axis(source_obj) if source_obj else None
+                if axis is None or not member_obj or member_obj.type != "MESH" or len(member_obj.data.vertices) != 2:
+                    continue
+                member_axis = np.array([member_obj.matrix_world @ vertex.co for vertex in member_obj.data.vertices])
+                # Blender mesh coordinates and transforms use single precision.
+                precision = 2 * np.finfo(np.float32).eps * max(1.0, np.abs(member_axis).max(), np.abs(axis).max())
+                if np.all(np.linalg.norm(member_axis - axis, axis=1) <= max(tolerance, precision)):
                     continue
             for assignment in member.HasAssignments or ():
                 if assignment.is_a("IfcRelAssignsToGroup") and assignment.RelatingGroup.is_a(
                     "IfcStructuralAnalysisModel"
                 ):
+                    if not sources and (assignment.RelatingGroup.GlobalId, member.GlobalId) not in tracked:
+                        continue
                     changed_models.add(assignment.RelatingGroup.id())
         return changed_models
+
+    @classmethod
+    def is_generated_connection(cls, connection):
+        relations = connection.ConnectsStructuralMembers or ()
+        if not relations:
+            return False
+        for relation in relations:
+            member = relation.RelatingStructuralMember
+            sources = ifcopenshell.util.structural.get_building_elements(member)
+            if not member.is_a("IfcStructuralCurveMember") or len(sources) != 1:
+                return False
+            if not (sources[0].is_a("IfcBeam") or sources[0].is_a("IfcColumn")):
+                return False
+        return True
 
     @classmethod
     def find_nearby_connection(cls, point, connections, tolerance):

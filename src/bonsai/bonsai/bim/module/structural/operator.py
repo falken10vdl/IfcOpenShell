@@ -16,7 +16,6 @@
 # You should have received a copy of the GNU General Public License
 # along with Bonsai.  If not, see <http://www.gnu.org/licenses/>.
 
-import json
 import math
 import re
 from math import degrees
@@ -544,74 +543,42 @@ class GenerateStructuralModel(bpy.types.Operator, tool.Ifc.Operator):
 
         sources = []
         updates = []
-        adopted = []
         skipped = 0
         unresolved = 0
-        objects = [] if self.sync_only else context.selected_objects
-        selected = (
-            {tool.Ifc.get_entity(obj) for obj in context.selected_objects}
-            if self.adopt_selected or not self.sync_only
-            else set()
+        selected = {tool.Ifc.get_entity(obj) for obj in context.selected_objects}
+        props = tool.Structural.get_structural_props()
+        tracked = {item.member_guid for item in props.generation_links if item.model_guid == model.GlobalId}
+        objects = (
+            []
+            if self.sync_only
+            else [
+                obj
+                for obj in context.selected_objects
+                if not ((element := tool.Ifc.get_entity(obj)) and element.is_a("IfcStructuralMember"))
+            ]
         )
         if self.sync_only or selected:
             for rel in model.IsGroupedBy or ():
                 for member in rel.RelatedObjects:
                     if not member.is_a("IfcStructuralCurveMember"):
                         continue
-                    generation_data = ifcopenshell.util.element.get_pset(member, "BBIM_StructuralGeneration")
-                    tracked = generation_data and generation_data.get("SourceAxis")
                     physical = ifcopenshell.util.structural.get_building_elements(member)
-                    if not tracked:
-                        if not selected:
-                            continue
-                        if (
-                            len(physical) != 1
-                            or not (physical[0].is_a("IfcBeam") or physical[0].is_a("IfcColumn"))
-                            or (physical[0] not in selected and member not in selected)
-                        ):
-                            continue
-                        source = physical[0]
-                        linked = [
-                            item
-                            for item in ifcopenshell.util.structural.get_structural_members(source)
-                            if item.is_a("IfcStructuralCurveMember")
-                            and any(item in group.RelatedObjects for group in model.IsGroupedBy or ())
-                        ]
-                        obj = tool.Ifc.get_object(source)
-                        axis = tool.Structural.get_physical_member_axis(obj) if obj else None
-                        member_obj = tool.Ifc.get_object(member)
-                        representation = ifcopenshell.util.representation.get_representation(
-                            member, "Model", "Reference", "GRAPH_VIEW"
-                        )
-                        if (
-                            len(linked) != 1
-                            or axis is None
-                            or not member.Axis
-                            or not member_obj
-                            or member_obj.type != "MESH"
-                            or len(member_obj.data.vertices) != 2
-                            or not representation
-                            or len(representation.Items) != 1
-                            or not representation.Items[0].is_a("IfcEdge")
-                        ):
-                            skipped += 1
-                            continue
-                        updates.append((member, axis))
-                        adopted.append((member, source))
+                    if not physical:
+                        if member in selected or member.GlobalId in tracked:
+                            unresolved += 1
                         continue
-                    if not self.sync_only:
+                    if not self.sync_only and member not in selected and not any(item in selected for item in physical):
                         continue
                     if len(physical) != 1:
                         unresolved += 1
                         continue
-                    if obj := tool.Ifc.get_object(physical[0]):
-                        objects.append(obj)
-                    else:
-                        skipped += 1
-        for obj in objects:
+                    if self.sync_only or member in selected:
+                        if obj := tool.Ifc.get_object(physical[0]):
+                            objects.append(obj)
+                        else:
+                            skipped += 1
+        for obj in dict.fromkeys(objects):
             element = tool.Ifc.get_entity(obj)
-            if any(element in (member, source) for member, source in adopted):
-                continue
             axis = tool.Structural.get_physical_member_axis(obj)
             if axis is None:
                 skipped += 1
@@ -620,12 +587,28 @@ class GenerateStructuralModel(bpy.types.Operator, tool.Ifc.Operator):
             managed = [
                 member
                 for member in linked
-                if ifcopenshell.util.element.get_pset(member, "BBIM_StructuralGeneration", "SourceAxis")
+                if member.is_a("IfcStructuralCurveMember")
                 and ifcopenshell.util.structural.get_building_elements(member) == [element]
                 and any(member in rel.RelatedObjects for rel in model.IsGroupedBy or ())
             ]
             if len(managed) == 1:
-                updates.append((managed[0], axis))
+                member = managed[0]
+                member_obj = tool.Ifc.get_object(member)
+                representation = ifcopenshell.util.representation.get_representation(
+                    member, "Model", "Reference", "GRAPH_VIEW"
+                )
+                if (
+                    not member.Axis
+                    or not member_obj
+                    or member_obj.type != "MESH"
+                    or len(member_obj.data.vertices) != 2
+                    or not representation
+                    or len(representation.Items) != 1
+                    or not representation.Items[0].is_a("IfcEdge")
+                ):
+                    skipped += 1
+                    continue
+                updates.append((member, axis))
                 continue
             if linked:
                 skipped += 1
@@ -647,14 +630,32 @@ class GenerateStructuralModel(bpy.types.Operator, tool.Ifc.Operator):
         representation_context = ifcopenshell.util.representation.get_context(file, "Model", "Reference", "GRAPH_VIEW")
         builder = ifcopenshell.util.shape_builder.ShapeBuilder(file)
         scale = ifcopenshell.util.unit.calculate_unit_scale(file)
-        tolerance = tool.Structural.get_structural_props().generation_merge_tolerance
-        if self.sync_only:
-            stored_tolerance = ifcopenshell.util.element.get_pset(model, "BBIM_StructuralGeneration", "MergeTolerance")
-            if stored_tolerance is not None:
-                tolerance = stored_tolerance
-        elif sources:
-            pset = ifcopenshell.api.pset.add_pset(file, product=model, name="BBIM_StructuralGeneration")
-            ifcopenshell.api.pset.edit_pset(file, pset=pset, properties={"MergeTolerance": tolerance})
+        legacy_tolerance = ifcopenshell.util.element.get_pset(
+            model, "BBIM_StructuralGeneration", "MergeTolerance", should_inherit=False
+        )
+        if legacy_tolerance is not None and not props.is_property_set("generation_merge_tolerance"):
+            props.generation_merge_tolerance = legacy_tolerance
+        tolerance = props.generation_merge_tolerance
+
+        def track_member(member):
+            if member.GlobalId not in tracked:
+                link = props.generation_links.add()
+                link.model_guid = model.GlobalId
+                link.member_guid = member.GlobalId
+                tracked.add(member.GlobalId)
+
+        def remove_legacy_generation_state(product):
+            data = ifcopenshell.util.element.get_pset(product, "BBIM_StructuralGeneration", should_inherit=False)
+            if not data:
+                return
+            keys = {"MergeTolerance", "Generated", "Source", "SourceAxis"} & data.keys()
+            if not keys:
+                return
+            pset = file.by_id(data["id"])
+            if data.keys() - keys == {"id"}:
+                ifcopenshell.api.pset.remove_pset(file, product=product, pset=pset)
+            else:
+                ifcopenshell.api.pset.edit_pset(file, pset=pset, properties={key: None for key in keys})
 
         def create_item(ifc_class, name, start, end=None):
             mesh = bpy.data.meshes.new(name)
@@ -682,10 +683,7 @@ class GenerateStructuralModel(bpy.types.Operator, tool.Ifc.Operator):
             return element
 
         def create_node(position):
-            node = create_item("IfcStructuralPointConnection", "Structural Point", position)
-            pset = ifcopenshell.api.pset.add_pset(file, product=node, name="BBIM_StructuralGeneration")
-            ifcopenshell.api.pset.edit_pset(file, pset=pset, properties={"Generated": True})
-            return node
+            return create_item("IfcStructuralPointConnection", "Structural Point", position)
 
         update_members = {member for member, axis in updates}
         node_positions = {}
@@ -741,24 +739,6 @@ class GenerateStructuralModel(bpy.types.Operator, tool.Ifc.Operator):
                     relation.RelatedStructuralConnection = target
                     member_nodes[member][index] = target
 
-        if adopted:
-            adopted_members = {member for member, source in adopted}
-            if ifcopenshell.util.element.get_pset(model, "BBIM_StructuralGeneration", "MergeTolerance") is None:
-                pset = ifcopenshell.api.pset.add_pset(file, product=model, name="BBIM_StructuralGeneration")
-                ifcopenshell.api.pset.edit_pset(file, pset=pset, properties={"MergeTolerance": tolerance})
-            for node in node_positions:
-                if node.Name != "Structural Point" or not node.ConnectsStructuralMembers:
-                    continue
-                if all(
-                    rel.RelatingStructuralMember in adopted_members
-                    or ifcopenshell.util.element.get_pset(
-                        rel.RelatingStructuralMember, "BBIM_StructuralGeneration", "SourceAxis"
-                    )
-                    for rel in node.ConnectsStructuralMembers
-                ):
-                    pset = ifcopenshell.api.pset.add_pset(file, product=node, name="BBIM_StructuralGeneration")
-                    ifcopenshell.api.pset.edit_pset(file, pset=pset, properties={"Generated": True})
-
         if tolerance > 0:
             ordered_nodes = sorted(
                 node_positions,
@@ -769,7 +749,7 @@ class GenerateStructuralModel(bpy.types.Operator, tool.Ifc.Operator):
             for node in ordered_nodes:
                 relations = tuple(node.ConnectsStructuralMembers or ())
                 protected = node.AppliedCondition or node.AssignedStructuralActivity
-                generated = ifcopenshell.util.element.get_pset(node, "BBIM_StructuralGeneration", "Generated")
+                generated = tool.Structural.is_generated_connection(node)
                 members = {rel.RelatingStructuralMember for rel in relations}
                 target = None
                 if generated and not protected and members <= update_members:
@@ -778,7 +758,7 @@ class GenerateStructuralModel(bpy.types.Operator, tool.Ifc.Operator):
                             rel.RelatingStructuralMember for rel in candidate.ConnectsStructuralMembers or ()
                         }
                         if (
-                            ifcopenshell.util.element.get_pset(candidate, "BBIM_StructuralGeneration", "Generated")
+                            tool.Structural.is_generated_connection(candidate)
                             and candidate_members <= update_members
                             and not members.intersection(candidate_members)
                             and np.linalg.norm(node_positions[node] - node_positions[candidate]) <= tolerance
@@ -823,23 +803,19 @@ class GenerateStructuralModel(bpy.types.Operator, tool.Ifc.Operator):
             ifcopenshell.api.structural.edit_structural_item_axis(file, structural_item=member, axis=axis_direction)
             context.view_layer.update()
             bonsai.core.geometry.edit_object_placement(tool.Ifc, tool.Geometry, tool.Surveyor, obj=member_obj)
-            pset = ifcopenshell.api.pset.add_pset(file, product=member, name="BBIM_StructuralGeneration")
-            ifcopenshell.api.pset.edit_pset(
-                file,
-                pset=pset,
-                properties={"Source": None, "SourceAxis": json.dumps([point.tolist() for point in axis])},
-            )
-
+            track_member(member)
         connections = [
             (np.asarray(tool.Ifc.get_object(item).location), item)
             for rel in model.IsGroupedBy or ()
             for item in rel.RelatedObjects
             if item.is_a("IfcStructuralPointConnection")
             and tool.Ifc.get_object(item)
-            and ifcopenshell.util.element.get_pset(item, "BBIM_StructuralGeneration", "Generated")
+            and tool.Structural.is_generated_connection(item)
         ]
 
         created = 0
+        created_members = []
+        touched_nodes = set(node_positions)
         for source, axis in sources:
             start, end = axis
             start_match = tool.Structural.find_nearby_connection(start, connections, tolerance)
@@ -855,6 +831,7 @@ class GenerateStructuralModel(bpy.types.Operator, tool.Ifc.Operator):
                     match = create_node(position)
                     connections.append((position, match))
                 node_items.append(match)
+            touched_nodes.update(node_items)
             member = create_item(
                 "IfcStructuralCurveMember", source.Name or "Structural Member", actual_start, actual_end
             )
@@ -864,17 +841,16 @@ class GenerateStructuralModel(bpy.types.Operator, tool.Ifc.Operator):
             axis_direction /= np.linalg.norm(axis_direction)
             ifcopenshell.api.structural.edit_structural_item_axis(file, structural_item=member, axis=axis_direction)
             ifcopenshell.api.structural.assign_product(file, relating_product=member, related_object=source)
-            pset = ifcopenshell.api.pset.add_pset(file, product=member, name="BBIM_StructuralGeneration")
-            ifcopenshell.api.pset.edit_pset(
-                file,
-                pset=pset,
-                properties={"SourceAxis": json.dumps([p.tolist() for p in axis])},
-            )
+            track_member(member)
+            created_members.append(member)
             for connection in node_items:
                 ifcopenshell.api.structural.add_structural_member_connection(
                     file, relating_structural_member=member, related_structural_connection=connection
                 )
             created += 1
+
+        for item in {model, *update_members, *created_members, *touched_nodes}:
+            remove_legacy_generation_state(item)
 
         if unresolved:
             self.report({"WARNING"}, f"Preserved {unresolved} members with missing or ambiguous source relationships")

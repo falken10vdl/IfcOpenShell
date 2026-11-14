@@ -67,6 +67,25 @@ class TestFindNearbyConnection(NewFile):
         assert subject.find_nearby_connection((1, 0, 0), connections, 0.1) is None
 
 
+class TestIsGeneratedConnection(NewFile):
+    def test_only_connections_of_linked_curve_members_are_generated(self):
+        ifc = ifcopenshell.file(schema="IFC4")
+        node = ifcopenshell.api.root.create_entity(ifc, ifc_class="IfcStructuralPointConnection")
+        member = ifcopenshell.api.root.create_entity(ifc, ifc_class="IfcStructuralCurveMember")
+        source = ifcopenshell.api.root.create_entity(ifc, ifc_class="IfcBeam")
+        assert not subject.is_generated_connection(node)
+        ifcopenshell.api.structural.assign_product(ifc, relating_product=source, related_object=member)
+        ifcopenshell.api.structural.add_structural_member_connection(
+            ifc, relating_structural_member=member, related_structural_connection=node
+        )
+        assert subject.is_generated_connection(node)
+        external = ifcopenshell.api.root.create_entity(ifc, ifc_class="IfcStructuralCurveMember")
+        ifcopenshell.api.structural.add_structural_member_connection(
+            ifc, relating_structural_member=external, related_structural_connection=node
+        )
+        assert not subject.is_generated_connection(node)
+
+
 class TestGetPhysicalMemberAxis(NewFile):
     def test_profile_extrusion_and_object_placement(self):
         ifc = ifcopenshell.file(schema="IFC4")

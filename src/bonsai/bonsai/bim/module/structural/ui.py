@@ -465,6 +465,14 @@ class BIM_PT_generate_structural_model(Panel):
     def draw(self, context):
         self.layout.prop(tool.Structural.get_structural_props(), "generation_merge_tolerance")
         self.layout.operator("bim.generate_structural_model", icon="MOD_SIMPLIFY")
+        model = tool.Structural.get_current_structural_analysis_model()
+        if model and model.id() in tool.Structural.get_changed_generated_models():
+            self.layout.label(text="Linked members have changed or missing sources", icon="ERROR")
+            op = self.layout.operator(
+                "bim.generate_structural_model", text="Refresh Linked Members", icon="FILE_REFRESH"
+            )
+            op.sync_only = True
+            op.structural_model = model.id()
 
 
 class BIM_UL_structural_model_members(UIList):

@@ -155,6 +155,15 @@ def update_structural_member_detail(self: "StructuralMemberDetail", context: bpy
     bpy.ops.bim.edit_structural_member_detail(detail_key=self.key, new_value=new_value)
 
 
+class StructuralGenerationLink(PropertyGroup):
+    model_guid: StringProperty(name="Analysis Model GlobalId")
+    member_guid: StringProperty(name="Structural Member GlobalId")
+
+    if TYPE_CHECKING:
+        model_guid: str
+        member_guid: str
+
+
 class StructuralMemberDetail(PropertyGroup):
     name: StringProperty(name="Name")
     value: StringProperty(
@@ -231,12 +240,13 @@ class BIMStructuralProperties(PropertyGroup):
     structural_member_details_id: IntProperty(name="Structural Member Details Id", options={"HIDDEN"})
     generation_merge_tolerance: FloatProperty(
         name="Merge Tolerance",
-        description="Merge generated points within this distance; zero disables merging",
+        description="Merge generated points and ignore axis differences within this distance; zero disables merging",
         subtype="DISTANCE",
         unit="LENGTH",
         min=0.0,
         default=0.0,
     )
+    generation_links: CollectionProperty(type=StructuralGenerationLink)
     load_case_attributes: CollectionProperty(name="Load Case Attributes", type=Attribute)
     active_load_case_id: IntProperty(name="Active Load Case Id")
     load_group_editing_type: StringProperty(name="Load Group Editing Type")
@@ -373,6 +383,8 @@ class BIMStructuralProperties(PropertyGroup):
         structural_member_details: bpy.types.bpy_prop_collection_idprop[StructuralMemberDetail]
         active_structural_member_detail_index: int
         structural_member_details_id: int
+        generation_merge_tolerance: float
+        generation_links: bpy.types.bpy_prop_collection_idprop[StructuralGenerationLink]
         load_case_attributes: bpy.types.bpy_prop_collection_idprop[Attribute]
         active_load_case_id: int
         load_group_editing_type: str
