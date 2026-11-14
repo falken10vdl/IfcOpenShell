@@ -618,3 +618,5 @@ def load_post(scene):
     _apply_user_preferences()
     _apply_geometry_defaults()
     _install_viewport_overlays()
+    # A web connection outlives the file; its WebProperties do not.
+    tool.Web.restore_connection_state()
