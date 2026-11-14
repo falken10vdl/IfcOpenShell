@@ -16,7 +16,13 @@
 # You should have received a copy of the GNU General Public License
 # along with Bonsai.  If not, see <http://www.gnu.org/licenses/>.
 
+import time
+
 import bpy
+from bpy.app.handlers import persistent
+
+import bonsai.tool as tool
+from bonsai.bim.ifc import IfcStore
 
 from . import operator, prop, ui, workspace
 
@@ -25,6 +31,11 @@ classes = (
     operator.LoadStructuralAnalysisModels,
     operator.DisableStructuralAnalysisModelEditingUI,
     operator.AddStructuralAnalysisModel,
+    operator.EditStructuralMemberDetail,
+    operator.SelectStructuralModelMember,
+    operator.ToggleStructuralModelMemberVisibility,
+    operator.ShowStructuralModelMembers,
+    operator.GenerateStructuralModel,
     operator.EditStructuralAnalysisModel,
     operator.RemoveStructuralAnalysisModel,
     operator.AssignStructuralAnalysisModel,
@@ -79,12 +90,17 @@ classes = (
     operator.EditBoundaryCondition,
     operator.ToggleFilterBoundaryConditions,
     prop.StructuralAnalysisModel,
+    prop.StructuralMemberDetail,
     prop.StructuralActivity,
     prop.StructuralLoad,
     prop.BoundaryCondition,
     prop.BIMStructuralProperties,
     prop.BIMObjectStructuralProperties,
     ui.BIM_PT_structural_analysis_models,
+    ui.BIM_PT_generate_structural_model,
+    ui.BIM_UL_structural_model_members,
+    ui.BIM_UL_structural_member_details,
+    ui.BIM_PT_structural_model_members,
     ui.BIM_PT_structural_member,
     ui.BIM_PT_structural_item_models,
     ui.BIM_PT_structural_item_loads,
@@ -103,14 +119,56 @@ classes = (
 )
 
 
+ignore_source_updates_until = 0.0
+
+
+def sync_generated_sources():
+    if IfcStore.current_transaction:
+        return 0.3
+    if any(
+        op.bl_idname.startswith("TRANSFORM_OT")
+        for window in bpy.context.window_manager.windows
+        for op in window.modal_operators
+    ):
+        return 0.3
+    if time.monotonic() < ignore_source_updates_until:
+        return None
+    for model_id in tool.Structural.get_changed_generated_models():
+        bpy.ops.bim.generate_structural_model(sync_only=True, structural_model=model_id)
+    return None
+
+
+@persistent
+def update_generated_sources(scene, depsgraph):
+    if tool.Ifc.get() and time.monotonic() >= ignore_source_updates_until:
+        if not bpy.app.timers.is_registered(sync_generated_sources):
+            bpy.app.timers.register(sync_generated_sources, first_interval=0.3)
+
+
+@persistent
+def ignore_generated_sources_after_undo(*args):
+    global ignore_source_updates_until
+    ignore_source_updates_until = time.monotonic() + 1.0
+    if bpy.app.timers.is_registered(sync_generated_sources):
+        bpy.app.timers.unregister(sync_generated_sources)
+
+
 def register():
     if not bpy.app.background:
         bpy.utils.register_tool(workspace.StructuralTool, after={"bim.spatial_tool"}, separator=False, group=False)
     bpy.types.Scene.BIMStructuralProperties = bpy.props.PointerProperty(type=prop.BIMStructuralProperties)
     bpy.types.Object.BIMStructuralProperties = bpy.props.PointerProperty(type=prop.BIMObjectStructuralProperties)
+    bpy.app.handlers.depsgraph_update_post.append(update_generated_sources)
+    bpy.app.handlers.undo_post.append(ignore_generated_sources_after_undo)
+    bpy.app.handlers.redo_post.append(ignore_generated_sources_after_undo)
 
 
 def unregister():
+    bpy.app.handlers.depsgraph_update_post.remove(update_generated_sources)
+    bpy.app.handlers.undo_post.remove(ignore_generated_sources_after_undo)
+    bpy.app.handlers.redo_post.remove(ignore_generated_sources_after_undo)
+    if bpy.app.timers.is_registered(sync_generated_sources):
+        bpy.app.timers.unregister(sync_generated_sources)
     if not bpy.app.background:
         bpy.utils.unregister_tool(workspace.StructuralTool)
     del bpy.types.Scene.BIMStructuralProperties

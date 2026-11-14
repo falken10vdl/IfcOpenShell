@@ -16,19 +16,30 @@
 # You should have received a copy of the GNU General Public License
 # along with Bonsai.  If not, see <http://www.gnu.org/licenses/>.
 
+import json
 import math
 import re
 from math import degrees
 from typing import TYPE_CHECKING, Literal, Union
 
 import bpy
+import ifcopenshell.api.geometry
 import ifcopenshell.api.group
+import ifcopenshell.api.profile
+import ifcopenshell.api.pset
 import ifcopenshell.api.structural
+import ifcopenshell.util.element
+import ifcopenshell.util.representation
+import ifcopenshell.util.shape_builder
+import ifcopenshell.util.structural
 import ifcopenshell.util.unit
+import numpy as np
 from bpy_extras.view3d_utils import location_3d_to_region_2d
 from mathutils import Matrix, Vector
 
 import bonsai.bim.helper
+import bonsai.core.geometry
+import bonsai.core.root
 import bonsai.core.structural as core
 import bonsai.tool as tool
 from bonsai.bim.module.structural.data import (
@@ -294,6 +305,589 @@ class DisableEditingStructuralBoundaryCondition(bpy.types.Operator):
         assert obj
         props = tool.Structural.get_object_structural_props(obj)
         props.active_boundary_condition = 0
+        return {"FINISHED"}
+
+
+def get_structural_model_member_object(context, member_id):
+    model = tool.Structural.get_current_structural_analysis_model()
+    if not model or not any(member.id() == member_id for member in tool.Structural.get_analysis_model_members(model)):
+        return None
+    obj = tool.Ifc.get_object_by_identifier(member_id)
+    if not obj or context.scene.objects.get(obj.name) != obj:
+        return None
+    return obj
+
+
+def reveal_structural_model_member(context, obj):
+    def find_collection_path(layer):
+        if layer.collection in obj.users_collection:
+            return [layer]
+        for child in layer.children:
+            if path := find_collection_path(child):
+                return [layer, *path]
+        return None
+
+    path = find_collection_path(context.view_layer.layer_collection)
+    if not path:
+        return False
+    for layer in path[1:]:
+        layer.exclude = False
+        layer.hide_viewport = False
+        layer.collection.hide_viewport = False
+        layer.collection.hide_select = False
+    context.view_layer.update()
+    if context.view_layer.objects.get(obj.name) != obj:
+        return False
+    obj.hide_viewport = False
+    obj.hide_select = False
+    obj.hide_set(False, view_layer=context.view_layer)
+    return True
+
+
+class EditStructuralMemberDetail(bpy.types.Operator, tool.Ifc.Operator):
+    bl_idname = "bim.edit_structural_member_detail"
+    bl_label = "Edit Structural Member Detail"
+    bl_options = {"REGISTER", "UNDO"}
+    detail_key: bpy.props.StringProperty()
+    new_value: bpy.props.StringProperty()
+
+    def _execute(self, context):
+        props = tool.Structural.get_structural_props()
+        detail = next((item for item in props.structural_member_details if item.key == self.detail_key), None)
+        if not detail or not detail.target_id:
+            self.report({"WARNING"}, "Structural detail is no longer available")
+            return {"CANCELLED"}
+        file = tool.Ifc.get()
+        target = file.by_id(detail.target_id)
+        if detail.target_kind == "PROPERTY":
+            original = target.NominalValue
+            parent = next(
+                (
+                    entity
+                    for entity in file.get_inverse(target)
+                    if entity.is_a("IfcPropertySet")
+                    or entity.is_a("IfcMaterialProperties")
+                    or entity.is_a("IfcProfileProperties")
+                ),
+                None,
+            )
+            if not original or not parent:
+                self.report({"WARNING"}, "This IFC property cannot be edited here")
+                return {"CANCELLED"}
+            wrapped_type = original.is_a()
+            original = original.wrappedValue
+        elif detail.target_kind == "QUANTITY":
+            parent = next(
+                (
+                    entity
+                    for entity in file.get_inverse(target)
+                    if entity.is_a("IfcElementQuantity") or entity.is_a("IfcPhysicalComplexQuantity")
+                ),
+                None,
+            )
+            if not parent:
+                self.report({"WARNING"}, "This IFC quantity cannot be edited here")
+                return {"CANCELLED"}
+            original = target[3]
+            wrapped_type = None
+        else:
+            original = getattr(target, detail.name)
+            wrapped_type = (
+                original.is_a() if isinstance(original, ifcopenshell.entity_instance) and not original.id() else None
+            )
+            if wrapped_type:
+                original = original.wrappedValue
+
+        try:
+            if isinstance(original, bool):
+                if self.new_value.lower() not in ("true", "false"):
+                    raise ValueError("Expected True or False")
+                value = self.new_value.lower() == "true"
+            elif isinstance(original, int):
+                value = int(self.new_value)
+            elif isinstance(original, float):
+                value = float(self.new_value)
+                if not math.isfinite(value):
+                    raise ValueError("Expected a finite number")
+            elif isinstance(original, str):
+                value = self.new_value
+            else:
+                raise ValueError("Unsupported IFC value type")
+        except ValueError as error:
+            detail["value"] = f"{original:.10g}" if isinstance(original, float) else str(original)
+            if isinstance(original, bool):
+                detail["boolean_value"] = original
+            self.report({"WARNING"}, str(error))
+            return {"CANCELLED"}
+
+        if detail.target_kind == "PROPERTY":
+            ifcopenshell.api.pset.edit_pset(
+                file, pset=parent, properties={detail.name: file.create_entity(wrapped_type, value)}
+            )
+        elif detail.target_kind == "QUANTITY":
+            ifcopenshell.api.pset.edit_qto(file, qto=parent, properties={detail.name: value})
+        elif detail.target_kind == "BOUNDARY":
+            ifcopenshell.api.structural.edit_structural_boundary_condition(
+                file, condition=target, attributes={detail.name: {"type": wrapped_type, "value": value}}
+            )
+        elif target.is_a("IfcStructuralLoad"):
+            ifcopenshell.api.structural.edit_structural_load(
+                file, structural_load=target, attributes={detail.name: value}
+            )
+        elif target.is_a("IfcProfileDef"):
+            ifcopenshell.api.profile.edit_profile(file, profile=target, attributes={detail.name: value})
+            from bonsai.bim.module.model.profile import DumbProfileRegenerator
+
+            DumbProfileRegenerator().regenerate_from_profile_def(target)
+        else:
+            self.report({"WARNING"}, "This IFC attribute cannot be edited here")
+            return {"CANCELLED"}
+        return {"FINISHED"}
+
+
+class SelectStructuralModelMember(bpy.types.Operator):
+    bl_idname = "bim.select_structural_model_member"
+    bl_label = "Select Structural Member"
+    bl_description = "Show and select this structural member"
+    bl_options = {"REGISTER", "UNDO"}
+    member: bpy.props.IntProperty()
+
+    def execute(self, context):
+        obj = get_structural_model_member_object(context, self.member)
+        if not obj:
+            self.report({"WARNING"}, "Structural member is not available in the current view layer")
+            return {"CANCELLED"}
+        if not reveal_structural_model_member(context, obj):
+            self.report({"WARNING"}, "Structural member cannot be shown in the current view layer")
+            return {"CANCELLED"}
+        for selected in context.selected_objects:
+            selected.select_set(False)
+        obj.select_set(True)
+        context.view_layer.objects.active = obj
+        return {"FINISHED"}
+
+
+class ToggleStructuralModelMemberVisibility(bpy.types.Operator):
+    bl_idname = "bim.toggle_structural_model_member_visibility"
+    bl_label = "Toggle Structural Member Visibility"
+    bl_description = "Show or hide this structural member"
+    bl_options = {"REGISTER", "UNDO"}
+    member: bpy.props.IntProperty()
+
+    def execute(self, context):
+        obj = get_structural_model_member_object(context, self.member)
+        if not obj:
+            self.report({"WARNING"}, "Structural member is not available in the current view layer")
+            return {"CANCELLED"}
+        visible = context.view_layer.objects.get(obj.name) == obj and obj.visible_get(view_layer=context.view_layer)
+        if visible:
+            obj.hide_set(True, view_layer=context.view_layer)
+        elif not reveal_structural_model_member(context, obj):
+            self.report({"WARNING"}, "Structural member cannot be shown in the current view layer")
+            return {"CANCELLED"}
+        return {"FINISHED"}
+
+
+class ShowStructuralModelMembers(bpy.types.Operator):
+    bl_idname = "bim.show_structural_model_members"
+    bl_label = "Show Structural Members"
+    bl_description = "Toggle X-ray and select the current analysis model's structural members"
+    bl_options = {"REGISTER", "UNDO"}
+
+    def execute(self, context):
+        model = tool.Structural.get_current_structural_analysis_model()
+        if not model:
+            self.report({"WARNING"}, "Select a current structural analysis model first")
+            return {"CANCELLED"}
+        area = next((area for area in context.screen.areas if area.type == "VIEW_3D"), None)
+        if not area:
+            self.report({"WARNING"}, "A 3D viewport is required")
+            return {"CANCELLED"}
+        region = next(region for region in area.regions if region.type == "WINDOW")
+        with context.temp_override(area=area, region=region):
+            bpy.ops.view3d.toggle_xray()
+        for obj in context.selected_objects:
+            obj.select_set(False)
+        selected = []
+        for member in tool.Structural.get_analysis_model_members(model):
+            obj = tool.Ifc.get_object(member)
+            if not obj or not reveal_structural_model_member(context, obj):
+                continue
+            obj.select_set(True)
+            selected.append(obj)
+        if selected:
+            context.view_layer.objects.active = selected[0]
+        else:
+            self.report({"WARNING"}, "No structural members are available in the current view layer")
+        return {"FINISHED"}
+
+
+class GenerateStructuralModel(bpy.types.Operator, tool.Ifc.Operator):
+    bl_idname = "bim.generate_structural_model"
+    bl_label = "Generate from Selected"
+    bl_description = "Generate or refresh structural members from profile beams and columns"
+    bl_options = {"REGISTER", "UNDO"}
+    sync_only: bpy.props.BoolProperty(default=False, options={"HIDDEN", "SKIP_SAVE"})
+    adopt_selected: bpy.props.BoolProperty(default=False, options={"HIDDEN", "SKIP_SAVE"})
+    structural_model: bpy.props.IntProperty(default=0, options={"HIDDEN", "SKIP_SAVE"})
+
+    def _execute(self, context):
+        file = tool.Ifc.get()
+        model = (
+            file.by_id(self.structural_model)
+            if self.structural_model
+            else tool.Structural.get_current_structural_analysis_model()
+        )
+        if not model:
+            self.report({"WARNING"}, "Select a current structural analysis model first")
+            return {"CANCELLED"}
+
+        sources = []
+        updates = []
+        adopted = []
+        skipped = 0
+        unresolved = 0
+        objects = [] if self.sync_only else context.selected_objects
+        selected = (
+            {tool.Ifc.get_entity(obj) for obj in context.selected_objects}
+            if self.adopt_selected or not self.sync_only
+            else set()
+        )
+        if self.sync_only or selected:
+            for rel in model.IsGroupedBy or ():
+                for member in rel.RelatedObjects:
+                    if not member.is_a("IfcStructuralCurveMember"):
+                        continue
+                    generation_data = ifcopenshell.util.element.get_pset(member, "BBIM_StructuralGeneration")
+                    tracked = generation_data and generation_data.get("SourceAxis")
+                    physical = ifcopenshell.util.structural.get_building_elements(member)
+                    if not tracked:
+                        if not selected:
+                            continue
+                        if (
+                            len(physical) != 1
+                            or not (physical[0].is_a("IfcBeam") or physical[0].is_a("IfcColumn"))
+                            or (physical[0] not in selected and member not in selected)
+                        ):
+                            continue
+                        source = physical[0]
+                        linked = [
+                            item
+                            for item in ifcopenshell.util.structural.get_structural_members(source)
+                            if item.is_a("IfcStructuralCurveMember")
+                            and any(item in group.RelatedObjects for group in model.IsGroupedBy or ())
+                        ]
+                        obj = tool.Ifc.get_object(source)
+                        axis = tool.Structural.get_physical_member_axis(obj) if obj else None
+                        member_obj = tool.Ifc.get_object(member)
+                        representation = ifcopenshell.util.representation.get_representation(
+                            member, "Model", "Reference", "GRAPH_VIEW"
+                        )
+                        if (
+                            len(linked) != 1
+                            or axis is None
+                            or not member.Axis
+                            or not member_obj
+                            or member_obj.type != "MESH"
+                            or len(member_obj.data.vertices) != 2
+                            or not representation
+                            or len(representation.Items) != 1
+                            or not representation.Items[0].is_a("IfcEdge")
+                        ):
+                            skipped += 1
+                            continue
+                        updates.append((member, axis))
+                        adopted.append((member, source))
+                        continue
+                    if not self.sync_only:
+                        continue
+                    if len(physical) != 1:
+                        unresolved += 1
+                        continue
+                    if obj := tool.Ifc.get_object(physical[0]):
+                        objects.append(obj)
+                    else:
+                        skipped += 1
+        for obj in objects:
+            element = tool.Ifc.get_entity(obj)
+            if any(element in (member, source) for member, source in adopted):
+                continue
+            axis = tool.Structural.get_physical_member_axis(obj)
+            if axis is None:
+                skipped += 1
+                continue
+            linked = ifcopenshell.util.structural.get_structural_members(element)
+            managed = [
+                member
+                for member in linked
+                if ifcopenshell.util.element.get_pset(member, "BBIM_StructuralGeneration", "SourceAxis")
+                and ifcopenshell.util.structural.get_building_elements(member) == [element]
+                and any(member in rel.RelatedObjects for rel in model.IsGroupedBy or ())
+            ]
+            if len(managed) == 1:
+                updates.append((managed[0], axis))
+                continue
+            if linked:
+                skipped += 1
+                continue
+            sources.append((element, axis))
+
+        if not sources and not updates:
+            message = (
+                f"Preserved {unresolved} members with missing or ambiguous source relationships"
+                if unresolved
+                else "No tracked members to refresh; select linked beams or columns to refresh older members"
+                if self.sync_only
+                else "No supported, unassigned profile beams or columns selected"
+            )
+            self.report({"WARNING"}, message)
+            return {"CANCELLED"}
+
+        tool.Structural.ensure_representation_contexts()
+        representation_context = ifcopenshell.util.representation.get_context(file, "Model", "Reference", "GRAPH_VIEW")
+        builder = ifcopenshell.util.shape_builder.ShapeBuilder(file)
+        scale = ifcopenshell.util.unit.calculate_unit_scale(file)
+        tolerance = tool.Structural.get_structural_props().generation_merge_tolerance
+        if self.sync_only:
+            stored_tolerance = ifcopenshell.util.element.get_pset(model, "BBIM_StructuralGeneration", "MergeTolerance")
+            if stored_tolerance is not None:
+                tolerance = stored_tolerance
+        elif sources:
+            pset = ifcopenshell.api.pset.add_pset(file, product=model, name="BBIM_StructuralGeneration")
+            ifcopenshell.api.pset.edit_pset(file, pset=pset, properties={"MergeTolerance": tolerance})
+
+        def create_item(ifc_class, name, start, end=None):
+            mesh = bpy.data.meshes.new(name)
+            obj = bpy.data.objects.new(name, mesh)
+            element = bonsai.core.root.assign_class(
+                tool.Ifc, tool.Collector, tool.Root, obj=obj, ifc_class=ifc_class, should_add_representation=False
+            )
+            obj.location = start
+            points = [(0.0, 0.0, 0.0)]
+            if end is None:
+                item = builder.vertex()
+            else:
+                local_end = np.asarray(end) - np.asarray(start)
+                points.append(tuple(local_end))
+                item = builder.edge(end=local_end / scale)
+            mesh.from_pydata(points, [(0, 1)] if end is not None else [], [])
+            representation = builder.get_representation(representation_context, [item])
+            ifcopenshell.api.geometry.assign_representation(file, product=element, representation=representation)
+            tool.Geometry.link(representation, mesh)
+            context.view_layer.update()
+            bonsai.core.geometry.edit_object_placement(tool.Ifc, tool.Geometry, tool.Surveyor, obj=obj)
+            ifcopenshell.api.structural.assign_structural_analysis_model(
+                file, products=[element], structural_analysis_model=model
+            )
+            return element
+
+        def create_node(position):
+            node = create_item("IfcStructuralPointConnection", "Structural Point", position)
+            pset = ifcopenshell.api.pset.add_pset(file, product=node, name="BBIM_StructuralGeneration")
+            ifcopenshell.api.pset.edit_pset(file, pset=pset, properties={"Generated": True})
+            return node
+
+        update_members = {member for member, axis in updates}
+        node_positions = {}
+        member_nodes = {}
+        node_requests = {}
+        for member, axis in updates:
+            member_obj = tool.Ifc.get_object(member)
+            relations = list(member.ConnectedBy or ())
+            if (
+                not member_obj
+                or len(relations) != 2
+                or not all(tool.Ifc.get_object(rel.RelatedStructuralConnection) for rel in relations)
+            ):
+                self.report({"WARNING"}, "Cannot update a member with unsupported connections")
+                return {"CANCELLED"}
+            member_nodes[member] = [None, None]
+            for index, position in enumerate(axis):
+                previous = np.asarray(member_obj.matrix_world @ member_obj.data.vertices[index].co)
+                relation = min(
+                    relations,
+                    key=lambda item: np.linalg.norm(
+                        np.asarray(tool.Ifc.get_object(item.RelatedStructuralConnection).location) - previous
+                    ),
+                )
+                relations.remove(relation)
+                node_requests.setdefault(relation.RelatedStructuralConnection, []).append(
+                    (member, index, relation, position)
+                )
+
+        for node, requests in node_requests.items():
+            original = np.asarray(tool.Ifc.get_object(node).location)
+            clusters = []
+            for request in requests:
+                cluster = next(
+                    (items for items in clusters if np.linalg.norm(items[0][3] - request[3]) <= max(tolerance, 1e-8)),
+                    None,
+                )
+                if cluster is None:
+                    cluster = []
+                    clusters.append(cluster)
+                cluster.append(request)
+            closest = min(clusters, key=lambda items: np.linalg.norm(items[0][3] - original))
+            has_external = any(
+                rel.RelatingStructuralMember not in update_members for rel in node.ConnectsStructuralMembers
+            )
+            if has_external and np.linalg.norm(closest[0][3] - original) > max(tolerance, 1e-8):
+                closest = None
+            for cluster in clusters:
+                position = original if has_external and cluster is closest else cluster[0][3]
+                target = node if cluster is closest else create_node(position)
+                node_positions[target] = position
+                for member, index, relation, unused_position in cluster:
+                    relation.RelatedStructuralConnection = target
+                    member_nodes[member][index] = target
+
+        if adopted:
+            adopted_members = {member for member, source in adopted}
+            if ifcopenshell.util.element.get_pset(model, "BBIM_StructuralGeneration", "MergeTolerance") is None:
+                pset = ifcopenshell.api.pset.add_pset(file, product=model, name="BBIM_StructuralGeneration")
+                ifcopenshell.api.pset.edit_pset(file, pset=pset, properties={"MergeTolerance": tolerance})
+            for node in node_positions:
+                if node.Name != "Structural Point" or not node.ConnectsStructuralMembers:
+                    continue
+                if all(
+                    rel.RelatingStructuralMember in adopted_members
+                    or ifcopenshell.util.element.get_pset(
+                        rel.RelatingStructuralMember, "BBIM_StructuralGeneration", "SourceAxis"
+                    )
+                    for rel in node.ConnectsStructuralMembers
+                ):
+                    pset = ifcopenshell.api.pset.add_pset(file, product=node, name="BBIM_StructuralGeneration")
+                    ifcopenshell.api.pset.edit_pset(file, pset=pset, properties={"Generated": True})
+
+        if tolerance > 0:
+            ordered_nodes = sorted(
+                node_positions,
+                key=lambda node: bool(node.AppliedCondition or node.AssignedStructuralActivity),
+                reverse=True,
+            )
+            retained = []
+            for node in ordered_nodes:
+                relations = tuple(node.ConnectsStructuralMembers or ())
+                protected = node.AppliedCondition or node.AssignedStructuralActivity
+                generated = ifcopenshell.util.element.get_pset(node, "BBIM_StructuralGeneration", "Generated")
+                members = {rel.RelatingStructuralMember for rel in relations}
+                target = None
+                if generated and not protected and members <= update_members:
+                    for candidate in retained:
+                        candidate_members = {
+                            rel.RelatingStructuralMember for rel in candidate.ConnectsStructuralMembers or ()
+                        }
+                        if (
+                            ifcopenshell.util.element.get_pset(candidate, "BBIM_StructuralGeneration", "Generated")
+                            and candidate_members <= update_members
+                            and not members.intersection(candidate_members)
+                            and np.linalg.norm(node_positions[node] - node_positions[candidate]) <= tolerance
+                        ):
+                            target = candidate
+                            break
+                if target is None:
+                    retained.append(node)
+                    continue
+                for relation in relations:
+                    relation.RelatedStructuralConnection = target
+                for member, nodes in member_nodes.items():
+                    member_nodes[member] = [target if item == node else item for item in nodes]
+                del node_positions[node]
+                tool.Geometry.delete_ifc_object(tool.Ifc.get_object(node))
+
+        for node, position in node_positions.items():
+            node_obj = tool.Ifc.get_object(node)
+            node_obj.location = position
+            context.view_layer.update()
+            bonsai.core.geometry.edit_object_placement(tool.Ifc, tool.Geometry, tool.Surveyor, obj=node_obj)
+
+        for member, axis in updates:
+            start, end = (node_positions[node] for node in member_nodes[member])
+            member_obj = tool.Ifc.get_object(member)
+            member_obj.location = start
+            member_obj.data.vertices[1].co = end - start
+            member_obj.data.update()
+            representation = ifcopenshell.util.representation.get_representation(
+                member, "Model", "Reference", "GRAPH_VIEW"
+            )
+            representation.Items[0].EdgeEnd.VertexGeometry.Coordinates = tuple(
+                float(value) for value in (end - start) / scale
+            )
+            direction = (end - start) / np.linalg.norm(end - start)
+            axis_direction = np.array(member.Axis.DirectionRatios, dtype=float)
+            axis_direction -= np.dot(axis_direction, direction) * direction
+            if np.linalg.norm(axis_direction) < 1e-8:
+                reference = np.array((0.0, 0.0, 1.0)) if abs(direction[2]) < 0.9 else np.array((1.0, 0.0, 0.0))
+                axis_direction = reference - np.dot(reference, direction) * direction
+            axis_direction /= np.linalg.norm(axis_direction)
+            ifcopenshell.api.structural.edit_structural_item_axis(file, structural_item=member, axis=axis_direction)
+            context.view_layer.update()
+            bonsai.core.geometry.edit_object_placement(tool.Ifc, tool.Geometry, tool.Surveyor, obj=member_obj)
+            pset = ifcopenshell.api.pset.add_pset(file, product=member, name="BBIM_StructuralGeneration")
+            ifcopenshell.api.pset.edit_pset(
+                file,
+                pset=pset,
+                properties={"Source": None, "SourceAxis": json.dumps([point.tolist() for point in axis])},
+            )
+
+        connections = [
+            (np.asarray(tool.Ifc.get_object(item).location), item)
+            for rel in model.IsGroupedBy or ()
+            for item in rel.RelatedObjects
+            if item.is_a("IfcStructuralPointConnection")
+            and tool.Ifc.get_object(item)
+            and ifcopenshell.util.element.get_pset(item, "BBIM_StructuralGeneration", "Generated")
+        ]
+
+        created = 0
+        for source, axis in sources:
+            start, end = axis
+            start_match = tool.Structural.find_nearby_connection(start, connections, tolerance)
+            end_match = tool.Structural.find_nearby_connection(end, connections, tolerance)
+            actual_start = next((position for position, item in connections if item == start_match), start)
+            actual_end = next((position for position, item in connections if item == end_match), end)
+            if np.linalg.norm(actual_end - actual_start) < 1e-9:
+                skipped += 1
+                continue
+            node_items = []
+            for position, match in ((actual_start, start_match), (actual_end, end_match)):
+                if match is None:
+                    match = create_node(position)
+                    connections.append((position, match))
+                node_items.append(match)
+            member = create_item(
+                "IfcStructuralCurveMember", source.Name or "Structural Member", actual_start, actual_end
+            )
+            direction = (actual_end - actual_start) / np.linalg.norm(actual_end - actual_start)
+            reference = np.array((0.0, 0.0, 1.0)) if abs(direction[2]) < 0.9 else np.array((1.0, 0.0, 0.0))
+            axis_direction = reference - np.dot(reference, direction) * direction
+            axis_direction /= np.linalg.norm(axis_direction)
+            ifcopenshell.api.structural.edit_structural_item_axis(file, structural_item=member, axis=axis_direction)
+            ifcopenshell.api.structural.assign_product(file, relating_product=member, related_object=source)
+            pset = ifcopenshell.api.pset.add_pset(file, product=member, name="BBIM_StructuralGeneration")
+            ifcopenshell.api.pset.edit_pset(
+                file,
+                pset=pset,
+                properties={"SourceAxis": json.dumps([p.tolist() for p in axis])},
+            )
+            for connection in node_items:
+                ifcopenshell.api.structural.add_structural_member_connection(
+                    file, relating_structural_member=member, related_structural_connection=connection
+                )
+            created += 1
+
+        if unresolved:
+            self.report({"WARNING"}, f"Preserved {unresolved} members with missing or ambiguous source relationships")
+        elif self.sync_only and skipped:
+            self.report(
+                {"WARNING"}, f"Refreshed {len(updates)} structural members; skipped {skipped} unsupported objects"
+            )
+        elif self.sync_only and self.adopt_selected:
+            self.report({"INFO"}, f"Refreshed {len(updates)} structural members")
+        elif not self.sync_only:
+            self.report(
+                {"INFO"}, f"Created {created}, updated {len(updates)} structural members; skipped {skipped} objects"
+            )
         return {"FINISHED"}
 
 

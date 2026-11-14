@@ -28,7 +28,12 @@ import ifcopenshell
 import ifcopenshell.api.context
 import ifcopenshell.api.structural
 import ifcopenshell.util.attribute
+import ifcopenshell.util.element
+import ifcopenshell.util.placement
 import ifcopenshell.util.representation
+import ifcopenshell.util.structural
+import ifcopenshell.util.unit
+import numpy as np
 
 import bonsai.bim.helper
 import bonsai.core.tool
@@ -46,6 +51,148 @@ if TYPE_CHECKING:
 
 
 class Structural(bonsai.core.tool.Structural):
+    @classmethod
+    def get_analysis_model_members(cls, model):
+        return [
+            item
+            for relation in model.IsGroupedBy or ()
+            for item in relation.RelatedObjects
+            if item.is_a("IfcStructuralMember")
+        ]
+
+    @classmethod
+    def refresh_analysis_model_members(cls):
+        props = cls.get_structural_props()
+        index = props.active_structural_model_member_index
+        active_id = (
+            props.structural_model_members[index].ifc_definition_id
+            if 0 <= index < len(props.structural_model_members)
+            else 0
+        )
+        model = cls.get_current_structural_analysis_model() if tool.Ifc.get() else None
+        members = (
+            sorted(cls.get_analysis_model_members(model), key=lambda member: (member.Name or "", member.id()))
+            if model
+            else []
+        )
+        if [(item.ifc_definition_id, item.name) for item in props.structural_model_members] == [
+            (member.id(), member.Name or "Unnamed") for member in members
+        ]:
+            return
+        props.structural_model_members.clear()
+        props.active_structural_model_member_index = -1
+        for index, member in enumerate(members):
+            item = props.structural_model_members.add()
+            item.name = member.Name or "Unnamed"
+            item.ifc_definition_id = member.id()
+            if member.id() == active_id:
+                props.active_structural_model_member_index = index
+
+    @classmethod
+    def refresh_analysis_model_member_details(cls):
+        from bonsai.bim.module.structural.data import StructuralModelMemberData
+
+        props = cls.get_structural_props()
+        index = props.active_structural_model_member_index
+        file = tool.Ifc.get()
+        member_id = (
+            props.structural_model_members[index].ifc_definition_id
+            if file and 0 <= index < len(props.structural_model_members)
+            else 0
+        )
+        member = file.by_id(member_id) if member_id else None
+        expanded = (
+            {item.key: item.is_expanded for item in props.structural_member_details}
+            if member_id == props.structural_member_details_id
+            else {}
+        )
+        rows = []
+        if member:
+            StructuralModelMemberData.load(member)
+            rows = StructuralModelMemberData.build_tree(StructuralModelMemberData.data)
+        if member_id == props.structural_member_details_id and [
+            item.key for item in props.structural_member_details
+        ] == [row["key"] for row in rows]:
+            for item, row in zip(props.structural_member_details, rows):
+                item["value"] = row["value"]
+                item["boolean_value"] = row["value"] == "True"
+                item.target_id = row["target_id"]
+                item.target_kind = row["target_kind"]
+                item.value_type = row["value_type"]
+            return
+        props.structural_member_details.clear()
+        props.structural_member_details_id = member_id
+        for row in rows:
+            item = props.structural_member_details.add()
+            item.name = row["name"]
+            item["value"] = row["value"]
+            item["boolean_value"] = row["value"] == "True"
+            item.key = row["key"]
+            item.parent = row["parent"]
+            item.level = row["level"]
+            item.has_children = row["has_children"]
+            item.is_expanded = expanded.get(item.key, False)
+            item.target_id = row["target_id"]
+            item.target_kind = row["target_kind"]
+            item.value_type = row["value_type"]
+
+    @classmethod
+    def get_changed_generated_models(cls):
+        file = tool.Ifc.get()
+        if not file:
+            return set()
+        changed_models = set()
+        for member in file.by_type("IfcStructuralCurveMember"):
+            data = ifcopenshell.util.element.get_pset(member, "BBIM_StructuralGeneration")
+            if not data or not data.get("SourceAxis"):
+                continue
+            sources = ifcopenshell.util.structural.get_building_elements(member)
+            if len(sources) == 1:
+                obj = tool.Ifc.get_object(sources[0])
+                axis = cls.get_physical_member_axis(obj) if obj else None
+                if axis is None or np.allclose(axis, json.loads(data["SourceAxis"]), atol=1e-8, rtol=0):
+                    continue
+            for assignment in member.HasAssignments or ():
+                if assignment.is_a("IfcRelAssignsToGroup") and assignment.RelatingGroup.is_a(
+                    "IfcStructuralAnalysisModel"
+                ):
+                    changed_models.add(assignment.RelatingGroup.id())
+        return changed_models
+
+    @classmethod
+    def find_nearby_connection(cls, point, connections, tolerance):
+        if tolerance <= 0:
+            return None
+        nearby = (
+            (np.linalg.norm(np.asarray(point) - np.asarray(position)), connection)
+            for position, connection in connections
+        )
+        return min((item for item in nearby if item[0] <= tolerance), default=(None, None), key=lambda item: item[0])[1]
+
+    @classmethod
+    def get_physical_member_axis(cls, obj):
+        element = tool.Ifc.get_entity(obj)
+        if not element or not element.is_a("IfcBeam") and not element.is_a("IfcColumn"):
+            return None
+        representation = ifcopenshell.util.representation.get_representation(element, "Model", "Body", "MODEL_VIEW")
+        if (
+            not representation
+            or len(representation.Items) != 1
+            or not representation.Items[0].is_a("IfcExtrudedAreaSolid")
+        ):
+            return None
+        extrusion = representation.Items[0]
+        direction = np.array(extrusion.ExtrudedDirection.DirectionRatios, dtype=float)
+        direction /= np.linalg.norm(direction)
+        scale = ifcopenshell.util.unit.calculate_unit_scale(tool.Ifc.get())
+        placement = ifcopenshell.util.placement.get_placement(extrusion.Position, should_return_si=True)
+        matrix = np.asarray(obj.matrix_world) @ placement
+        start = matrix[:3, 3]
+        end = start + matrix[:3, :3] @ direction * extrusion.Depth * scale
+        if np.linalg.norm(end - start) < 1e-9:
+            return None
+        return start, end
+
     @classmethod
     def get_structural_props(cls) -> BIMStructuralProperties:
         return bpy.context.scene.BIMStructuralProperties
@@ -177,6 +324,7 @@ class Structural(bonsai.core.tool.Structural):
     @classmethod
     def set_current_structural_analysis_model(cls, model: ifcopenshell.entity_instance) -> None:
         cls.get_structural_props().current_structural_analysis_model_id = model.id()
+        cls.refresh_analysis_model_members()
 
     @classmethod
     def assign_to_current_structural_analysis_model(cls, element: ifcopenshell.entity_instance) -> None:
