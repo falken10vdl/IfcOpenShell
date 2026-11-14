@@ -285,6 +285,11 @@ class AssignMaterialToSelected(bpy.types.Operator, tool.Ifc.Operator):
             self.report({"WARNING"}, error)
             return {"CANCELLED"}
         usages = {element: tool.Structural.get_type_profile_usages(element) for element in elements}
+        sections = {
+            element: bool(tool.Structural.get_member_sections(element))
+            for element in elements
+            if element.is_a("IfcStructuralCurveMember")
+        }
         core.assign_material(
             tool.Ifc,
             tool.Material,
@@ -295,7 +300,7 @@ class AssignMaterialToSelected(bpy.types.Operator, tool.Ifc.Operator):
         )
         for element in elements:
             tool.Structural.restore_type_profile_usages(element, usages[element])
-            tool.Structural.sync_material_assignment(element)
+            tool.Structural.sync_material_assignment(element, restore_member_section=sections.get(element, False))
 
 
 class AssignMaterial(bpy.types.Operator, tool.Ifc.Operator):
@@ -327,10 +332,15 @@ class AssignMaterial(bpy.types.Operator, tool.Ifc.Operator):
             self.report({"WARNING"}, error)
             return {"CANCELLED"}
         usages = {element: tool.Structural.get_type_profile_usages(element) for element in elements}
+        sections = {
+            element: bool(tool.Structural.get_member_sections(element))
+            for element in elements
+            if element.is_a("IfcStructuralCurveMember")
+        }
         core.assign_material(tool.Ifc, tool.Material, material_type=self.material_type, objects=objects)
         for element in elements:
             tool.Structural.restore_type_profile_usages(element, usages[element])
-            tool.Structural.sync_material_assignment(element)
+            tool.Structural.sync_material_assignment(element, restore_member_section=sections.get(element, False))
 
 
 class UnassignMaterial(bpy.types.Operator, tool.Ifc.Operator):

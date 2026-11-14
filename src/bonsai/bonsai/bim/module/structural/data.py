@@ -37,6 +37,7 @@ def refresh():
     ConnectedStructuralMembersData.is_loaded = False
     StructuralMemberData.is_loaded = False
     StructuralModelMemberData.is_loaded = False
+    StructuralMemberChoices.is_loaded = False
     StructuralConnectionData.is_loaded = False
     StructuralAnalysisModelsData.is_loaded = False
     StructuralLoadCasesData.is_loaded = False
@@ -53,6 +54,28 @@ def refresh():
     if LoadsDecorator.is_installed:
         LoadsDecorator.update()
         tool.Blender.update_all_viewports()
+
+
+class StructuralMemberChoices:
+    is_loaded = False
+    sections = []
+    materials = []
+
+    @classmethod
+    def load(cls):
+        file = tool.Ifc.get()
+        cls.sections = sorted(
+            [(str(p.id()), p.ProfileName or f"Unnamed ({p.id()})", p.is_a()) for p in file.by_type("IfcProfileDef")],
+            key=lambda item: item[1].casefold(),
+        )
+        cls.materials = sorted(
+            [
+                (str(m.id()), m.Name or f"Unnamed ({m.id()})", (m.Description or "") if file.schema != "IFC2X3" else "")
+                for m in file.by_type("IfcMaterial")
+            ],
+            key=lambda item: item[1].casefold(),
+        )
+        cls.is_loaded = True
 
 
 class LoadGroupDecorationData:
@@ -282,20 +305,14 @@ class StructuralModelMemberData:
                 return [item.Profile for item in material.MaterialProfiles or () if item.Profile]
             return [item.SweptArea for item in ifcopenshell.util.shape.get_extrusions(product) or ()]
 
-        profiles = profiles_of(member)
+        profiles = tool.Structural.get_member_sections(member)
         profile_source = "Member"
-        if not profiles and source:
-            profiles = profiles_of(source)
-            profile_source = "Physical element"
-        elif profiles and source and set(profiles).intersection(profiles_of(source)):
+        if profiles and source and set(profiles).intersection(profiles_of(source)):
             profile_source = "Member (shared with physical element)"
 
         materials = [material for material in ifcopenshell.util.element.get_materials(member) if material]
         material_source = "Member"
-        if not materials and source:
-            materials = [material for material in ifcopenshell.util.element.get_materials(source) if material]
-            material_source = "Physical element"
-        elif materials and source and set(materials).intersection(ifcopenshell.util.element.get_materials(source)):
+        if materials and source and set(materials).intersection(ifcopenshell.util.element.get_materials(source)):
             material_source = "Member (shared with physical element)"
 
         def values(entity):

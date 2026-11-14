@@ -22,7 +22,7 @@ import itertools
 from typing import TYPE_CHECKING, Any, Union
 
 import bpy
-import ifcopenshell.util.structural
+import ifcopenshell.util.element
 from bpy.types import Panel, UIList
 
 import bonsai.bim.helper
@@ -451,7 +451,7 @@ class BIM_PT_structural_analysis_models(Panel):
 
 
 class BIM_PT_generate_structural_model(Panel):
-    bl_label = "Generate Structural Model"
+    bl_label = "Generate Structural Model (Beams & Columns)"
     bl_idname = "BIM_PT_generate_structural_model"
     bl_space_type = "PROPERTIES"
     bl_region_type = "WINDOW"
@@ -466,43 +466,25 @@ class BIM_PT_generate_structural_model(Panel):
     def draw(self, context):
         self.layout.prop(tool.Structural.get_structural_props(), "generation_merge_tolerance")
         self.layout.operator("bim.generate_structural_model", icon="MOD_SIMPLIFY")
-        model = tool.Structural.get_current_structural_analysis_model()
-        if not model:
-            return
-        op = self.layout.operator("bim.update_structural_model", icon="FILE_REFRESH")
-        op.structural_model = model.id()
-        changes = tool.Structural.get_member_changes(model)
-        if changes:
-            self.layout.label(text="Linked members have changed or missing sources", icon="ERROR")
-        for change in changes:
-            member, source = change["member"], change["source"]
-            box = self.layout.box()
-            box.label(text=f"{member.Name or member.is_a()} (#{member.id()})")
-            if source:
-                box.label(text=f"Source: {source.Name or source.is_a()} (#{source.id()})")
-            if change["reason"] == "MISSING_SOURCE":
-                box.label(text="Source relationship missing", icon="ERROR")
-            elif change["reason"] == "MULTIPLE_SOURCES":
-                box.label(text="Multiple source elements", icon="ERROR")
-            elif change["reason"] == "UNAVAILABLE":
-                box.label(text="Cannot compare source and member axes", icon="ERROR")
-            else:
-                if change["orientation_changed"]:
-                    box.label(text="Profile orientation differs", icon="ERROR")
-                if change["section_changed"]:
-                    box.label(text="Section or material differs", icon="ERROR")
-                for point in change["points"]:
-                    member_position = ", ".join(f"{value:.9g}" for value in point["member_point"])
-                    source_position = ", ".join(f"{value:.9g}" for value in point["source_point"])
-                    box.label(text=f"{point['endpoint']} member (m): {member_position}")
-                    box.label(text=f"{point['endpoint']} source (m): {source_position}")
-                    box.label(text=f"Difference: {point['distance']:.6g} m; tolerance: {change['tolerance']:.6g} m")
 
 
 class BIM_UL_structural_model_members(UIList):
     def draw_item(self, context, layout, data, item, icon, active_data, active_propname):
         row = layout.row(align=True)
         row.label(text=item.name, icon="OUTLINER_OB_MESH")
+        member = tool.Ifc.get().by_id(item.ifc_definition_id)
+        section = bool(tool.Structural.get_member_sections(member))
+        material = any(ifcopenshell.util.element.get_materials(member))
+        model = tool.Structural.get_current_structural_analysis_model()
+        change = tool.Structural.get_member_change(model, member) if model else None
+        warning = "STATUS_WARNING" if bpy.app.version >= (5, 2, 0) else "ERROR"
+        op = row.operator(
+            "bim.structural_member_assignment_status",
+            text="",
+            icon="CHECKMARK" if section and material and not change else warning,
+            emboss=False,
+        )
+        op.member = item.ifc_definition_id
         obj = tool.Ifc.get_object_by_identifier(item.ifc_definition_id)
         controls = row.row(align=True)
         in_view_layer = bool(obj and context.view_layer.objects.get(obj.name) == obj)
@@ -516,6 +498,8 @@ class BIM_UL_structural_model_members(UIList):
             icon="HIDE_ON" if hidden else "HIDE_OFF",
             emboss=False,
         )
+        op.member = item.ifc_definition_id
+        op = row.operator("bim.remove_structural_model_member", text="", icon="X", emboss=False)
         op.member = item.ifc_definition_id
 
 
@@ -539,6 +523,26 @@ class BIM_UL_structural_member_details(UIList):
             value.prop(item, "value", text="", emboss=False)
         else:
             value.label(text=item.value)
+        if item.key in ("/Section:0", "/Material:0") and 0 <= data.active_structural_model_member_index < len(
+            data.structural_model_members
+        ):
+            member_id = data.structural_model_members[data.active_structural_model_member_index].ifc_definition_id
+            member = tool.Ifc.get().by_id(member_id)
+            is_section = item.key == "/Section:0"
+            assigned = (
+                bool(tool.Structural.get_member_sections(member))
+                if is_section
+                else any(ifcopenshell.util.element.get_materials(member))
+            )
+            if assigned:
+                op = value.operator("bim.unassign_structural_member_assignment", text="", icon="LINKED", emboss=False)
+                op.assignment = "SECTION" if is_section else "MATERIAL"
+            else:
+                operator = (
+                    "bim.assign_structural_member_section" if is_section else "bim.assign_structural_member_material"
+                )
+                op = value.operator(operator, text="", icon="UNLINKED", emboss=False)
+            op.member = member_id
 
     def filter_items(self, context, data, propname):
         items = getattr(data, propname)
@@ -581,9 +585,6 @@ class BIM_PT_structural_model_members(Panel):
             return
         self.layout.separator()
         self.layout.label(text=f"{member.Name or 'Unnamed'} ({member.is_a()})", icon="OUTLINER_OB_MESH")
-        if ifcopenshell.util.structural.get_building_elements(member):
-            op = self.layout.operator("bim.unlink_structural_model_member", icon="UNLINKED")
-            op.member = member.id()
         self.layout.template_list(
             "BIM_UL_structural_member_details",
             "",
