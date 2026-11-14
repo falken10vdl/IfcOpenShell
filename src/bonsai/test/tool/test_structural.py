@@ -87,6 +87,12 @@ class TestIsGeneratedConnection(NewFile):
 
 
 class TestGetPhysicalMemberAxis(NewFile):
+    def test_profile_orientation_is_projected_onto_the_member_section(self):
+        direction = subject.get_member_orientation(np.array((0.0, 0.0, 1.0)), np.array((1.0, 0.0, 1.0)))
+        assert np.allclose(direction, (-(2**-0.5), 0.0, 2**-0.5))
+        assert subject.get_member_orientation(np.array((0.0, 0.0, 1.0)), np.array((0.0, 0.0, 1.0))) is None
+        assert subject.get_member_orientation(np.array((0.0, 0.0, 1.0)), np.zeros(3)) is None
+
     def test_profile_extrusion_and_object_placement(self):
         ifc = ifcopenshell.file(schema="IFC4")
         tool.Ifc.set(ifc)

@@ -380,6 +380,77 @@ class TestShowStructuralModelMembers(NewIfc):
 
 
 class TestGenerateStructuralModel(NewIfc):
+    @pytest.mark.parametrize(
+        "ifc_class,rotation,initial_axis,updated_axis,profile_axis,member_direction",
+        [
+            ("IfcColumn", (0, 0, np.pi / 2), (0, -1, 0), (1, 0, 0), (0, 1, 0), (0, 0, 1)),
+            (
+                "IfcColumn",
+                (0, 0, np.pi / 4),
+                (-(2**-0.5), -(2**-0.5), 0),
+                (2**-0.5, -(2**-0.5), 0),
+                (2**-0.5, 2**-0.5, 0),
+                (0, 0, 1),
+            ),
+            ("IfcBeam", (0, np.pi / 2, 0), (0, 0, 1), (0, -1, 0), (0, 0, -1), (1, 0, 0)),
+        ],
+    )
+    def test_member_orientation_follows_profile(
+        self, ifc_class, rotation, initial_axis, updated_axis, profile_axis, member_direction
+    ):
+        ifc = tool.Ifc.get()
+        model_context = ifcopenshell.util.representation.get_context(ifc, "Model")
+        body = ifcopenshell.api.context.add_context(
+            ifc, context_type="Model", context_identifier="Body", target_view="MODEL_VIEW", parent=model_context
+        )
+        profile = ifcopenshell.api.profile.add_parameterized_profile(ifc, ifc_class="IfcRectangleProfileDef")
+        profile.XDim, profile.YDim = 0.2, 0.3
+        model = ifcopenshell.api.structural.add_structural_analysis_model(ifc)
+        source = ifcopenshell.api.root.create_entity(ifc, ifc_class=ifc_class)
+        representation = ifcopenshell.api.geometry.add_profile_representation(
+            ifc, context=body, profile=profile, depth=3, placement_zx_axes=(None, (0.0, 1.0, 0.0))
+        )
+        ifcopenshell.api.geometry.assign_representation(ifc, product=source, representation=representation)
+        obj = bpy.data.objects.new(ifc_class, bpy.data.meshes.new(ifc_class))
+        bpy.context.scene.collection.objects.link(obj)
+        tool.Ifc.link(source, obj)
+        obj.rotation_euler = rotation
+        obj.select_set(True)
+        bpy.context.view_layer.objects.active = obj
+        bpy.context.view_layer.update()
+
+        bpy.ops.bim.generate_structural_model()
+        member = ifcopenshell.util.structural.get_structural_members(source)[0]
+        assert member.Axis.DirectionRatios == pytest.approx(initial_axis, abs=1e-6)
+        assert not tool.Structural.get_member_changes(model)
+        representation.Items[0].Position.RefDirection.DirectionRatios = (-1.0, 0.0, 0.0)
+        ifc_before_check = ifc.to_string()
+        history_before_check = len(IfcStore.history)
+        changes = tool.Structural.get_member_changes(model)
+        assert len(changes) == 1
+        assert changes[0]["reason"] == "ORIENTATION"
+        assert not changes[0]["points"]
+        layout = MagicMock()
+        BIM_PT_generate_structural_model.draw(SimpleNamespace(layout=layout), bpy.context)
+        layout.box.return_value.label.assert_any_call(text="Profile orientation differs", icon="ERROR")
+        assert ifc.to_string() == ifc_before_check
+        assert len(IfcStore.history) == history_before_check
+        bpy.ops.bim.update_structural_model(structural_model=model.id())
+        assert member.Axis.DirectionRatios == pytest.approx(updated_axis, abs=1e-6)
+        assert not tool.Structural.get_member_changes(model)
+
+        profile.Position = ifc.createIfcAxis2Placement2D(
+            ifc.createIfcCartesianPoint((0.0, 0.0)), ifc.createIfcDirection((0.0, 1.0))
+        )
+        assert tool.Structural.get_member_changes(model)[0]["reason"] == "ORIENTATION"
+        bpy.ops.bim.update_structural_model(structural_model=model.id())
+        assert member.Axis.DirectionRatios == pytest.approx(profile_axis, abs=1e-6)
+        member.Axis.DirectionRatios = tuple(float(value) for value in member_direction)
+        assert tool.Structural.get_member_changes(model)[0]["reason"] == "ORIENTATION"
+        bpy.ops.bim.update_structural_model(structural_model=model.id())
+        assert member.Axis.DirectionRatios == pytest.approx(profile_axis, abs=1e-6)
+        assert not tool.Structural.get_member_changes(model)
+
     def test_panel_has_one_generate_button(self):
         layout = MagicMock()
         BIM_PT_generate_structural_model.draw(SimpleNamespace(layout=layout), bpy.context)

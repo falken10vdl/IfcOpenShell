@@ -575,8 +575,12 @@ class StructuralModelGeneration(bpy.types.Operator, tool.Ifc.Operator):
                             skipped += 1
         for obj in dict.fromkeys(objects):
             element = tool.Ifc.get_entity(obj)
-            axis = tool.Structural.get_physical_member_axis(obj)
-            if axis is None:
+            data = tool.Structural.get_physical_member_data(obj)
+            if data is None:
+                skipped += 1
+                continue
+            axis, profile_direction = data
+            if tool.Structural.get_member_orientation(profile_direction, axis[1] - axis[0]) is None:
                 skipped += 1
                 continue
             linked = ifcopenshell.util.structural.get_structural_members(element)
@@ -604,12 +608,12 @@ class StructuralModelGeneration(bpy.types.Operator, tool.Ifc.Operator):
                 ):
                     skipped += 1
                     continue
-                updates.append((member, axis))
+                updates.append((member, axis, profile_direction))
                 continue
             if linked:
                 skipped += 1
                 continue
-            sources.append((element, axis))
+            sources.append((element, axis, profile_direction))
 
         if not sources and not updates:
             message = (
@@ -681,11 +685,11 @@ class StructuralModelGeneration(bpy.types.Operator, tool.Ifc.Operator):
         def create_node(position):
             return create_item("IfcStructuralPointConnection", "Structural Point", position)
 
-        update_members = {member for member, axis in updates}
+        update_members = {member for member, axis, profile_direction in updates}
         node_positions = {}
         member_nodes = {}
         node_requests = {}
-        for member, axis in updates:
+        for member, axis, profile_direction in updates:
             member_obj = tool.Ifc.get_object(member)
             relations = list(member.ConnectedBy or ())
             if (
@@ -771,13 +775,23 @@ class StructuralModelGeneration(bpy.types.Operator, tool.Ifc.Operator):
                 del node_positions[node]
                 tool.Geometry.delete_ifc_object(tool.Ifc.get_object(node))
 
+        orientations = {}
+        for member, axis, profile_direction in updates:
+            start, end = (node_positions[node] for node in member_nodes[member])
+            axis_direction = tool.Structural.get_member_orientation(profile_direction, end - start)
+            if axis_direction is None:
+                raise ValueError("Profile orientation is parallel to the updated structural member")
+            member_obj = tool.Ifc.get_object(member)
+            axis_direction = np.linalg.solve(np.asarray(member_obj.matrix_world)[:3, :3], axis_direction)
+            orientations[member] = axis_direction / np.linalg.norm(axis_direction)
+
         for node, position in node_positions.items():
             node_obj = tool.Ifc.get_object(node)
             node_obj.location = position
             context.view_layer.update()
             bonsai.core.geometry.edit_object_placement(tool.Ifc, tool.Geometry, tool.Surveyor, obj=node_obj)
 
-        for member, axis in updates:
+        for member, axis, profile_direction in updates:
             start, end = (node_positions[node] for node in member_nodes[member])
             member_obj = tool.Ifc.get_object(member)
             member_obj.location = start
@@ -789,14 +803,9 @@ class StructuralModelGeneration(bpy.types.Operator, tool.Ifc.Operator):
             representation.Items[0].EdgeEnd.VertexGeometry.Coordinates = tuple(
                 float(value) for value in (end - start) / scale
             )
-            direction = (end - start) / np.linalg.norm(end - start)
-            axis_direction = np.array(member.Axis.DirectionRatios, dtype=float)
-            axis_direction -= np.dot(axis_direction, direction) * direction
-            if np.linalg.norm(axis_direction) < 1e-8:
-                reference = np.array((0.0, 0.0, 1.0)) if abs(direction[2]) < 0.9 else np.array((1.0, 0.0, 0.0))
-                axis_direction = reference - np.dot(reference, direction) * direction
-            axis_direction /= np.linalg.norm(axis_direction)
-            ifcopenshell.api.structural.edit_structural_item_axis(file, structural_item=member, axis=axis_direction)
+            ifcopenshell.api.structural.edit_structural_item_axis(
+                file, structural_item=member, axis=orientations[member]
+            )
             context.view_layer.update()
             bonsai.core.geometry.edit_object_placement(tool.Ifc, tool.Geometry, tool.Surveyor, obj=member_obj)
             track_member(member)
@@ -812,13 +821,17 @@ class StructuralModelGeneration(bpy.types.Operator, tool.Ifc.Operator):
         created = 0
         created_members = []
         touched_nodes = set(node_positions)
-        for source, axis in sources:
+        for source, axis, profile_direction in sources:
             start, end = axis
             start_match = tool.Structural.find_nearby_connection(start, connections, tolerance)
             end_match = tool.Structural.find_nearby_connection(end, connections, tolerance)
             actual_start = next((position for position, item in connections if item == start_match), start)
             actual_end = next((position for position, item in connections if item == end_match), end)
             if np.linalg.norm(actual_end - actual_start) < 1e-9:
+                skipped += 1
+                continue
+            axis_direction = tool.Structural.get_member_orientation(profile_direction, actual_end - actual_start)
+            if axis_direction is None:
                 skipped += 1
                 continue
             node_items = []
@@ -831,10 +844,6 @@ class StructuralModelGeneration(bpy.types.Operator, tool.Ifc.Operator):
             member = create_item(
                 "IfcStructuralCurveMember", source.Name or "Structural Member", actual_start, actual_end
             )
-            direction = (actual_end - actual_start) / np.linalg.norm(actual_end - actual_start)
-            reference = np.array((0.0, 0.0, 1.0)) if abs(direction[2]) < 0.9 else np.array((1.0, 0.0, 0.0))
-            axis_direction = reference - np.dot(reference, direction) * direction
-            axis_direction /= np.linalg.norm(axis_direction)
             ifcopenshell.api.structural.edit_structural_item_axis(file, structural_item=member, axis=axis_direction)
             ifcopenshell.api.structural.assign_product(file, relating_product=member, related_object=source)
             track_member(member)

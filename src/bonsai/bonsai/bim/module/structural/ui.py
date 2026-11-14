@@ -486,6 +486,8 @@ class BIM_PT_generate_structural_model(Panel):
             elif change["reason"] == "UNAVAILABLE":
                 box.label(text="Cannot compare source and member axes", icon="ERROR")
             else:
+                if change["orientation_changed"]:
+                    box.label(text="Profile orientation differs", icon="ERROR")
                 for point in change["points"]:
                     member_position = ", ".join(f"{value:.9g}" for value in point["member_point"])
                     source_position = ", ".join(f"{value:.9g}" for value in point["source_point"])

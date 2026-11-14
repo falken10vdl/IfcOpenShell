@@ -59,9 +59,10 @@ class StructuralAxisChange(TypedDict):
 class StructuralMemberChange(TypedDict):
     member: ifcopenshell.entity_instance
     source: Union[ifcopenshell.entity_instance, None]
-    reason: Literal["AXIS", "MISSING_SOURCE", "MULTIPLE_SOURCES", "UNAVAILABLE"]
+    reason: Literal["AXIS", "ORIENTATION", "MISSING_SOURCE", "MULTIPLE_SOURCES", "UNAVAILABLE"]
     tolerance: float
     points: list[StructuralAxisChange]
+    orientation_changed: bool
 
 
 class Structural(bonsai.core.tool.Structural):
@@ -175,17 +176,25 @@ class Structural(bonsai.core.tool.Structural):
                 "reason": "MISSING_SOURCE" if not sources else "MULTIPLE_SOURCES",
                 "tolerance": tolerance,
                 "points": [],
+                "orientation_changed": False,
             }
             if len(sources) != 1:
                 changes.append(change)
                 continue
             source_obj = tool.Ifc.get_object(sources[0])
             member_obj = tool.Ifc.get_object(member)
-            axis = cls.get_physical_member_axis(source_obj) if source_obj else None
-            if axis is None or not member_obj or member_obj.type != "MESH" or len(member_obj.data.vertices) != 2:
+            data = cls.get_physical_member_data(source_obj) if source_obj else None
+            if (
+                data is None
+                or not member_obj
+                or member_obj.type != "MESH"
+                or len(member_obj.data.vertices) != 2
+                or not member.Axis
+            ):
                 change["reason"] = "UNAVAILABLE"
                 changes.append(change)
                 continue
+            axis, profile_direction = data
             member_axis = np.array([member_obj.matrix_world @ vertex.co for vertex in member_obj.data.vertices])
             # Blender mesh coordinates and transforms use single precision.
             precision = 2 * np.finfo(np.float32).eps * max(1.0, np.abs(member_axis).max(), np.abs(axis).max())
@@ -203,7 +212,20 @@ class Structural(bonsai.core.tool.Structural):
                             "distance": distance,
                         }
                     )
-            if change["points"]:
+            direction = member_axis[1] - member_axis[0]
+            if np.linalg.norm(direction) < 1e-9:
+                change["reason"] = "UNAVAILABLE"
+                changes.append(change)
+                continue
+            expected = cls.get_member_orientation(profile_direction, direction)
+            actual = np.asarray(member_obj.matrix_world)[:3, :3] @ np.asarray(member.Axis.DirectionRatios)
+            actual = cls.get_member_orientation(actual, direction)
+            change["orientation_changed"] = (
+                expected is None or actual is None or bool(np.linalg.norm(actual - expected) > 1e-6)
+            )
+            if change["points"] or change["orientation_changed"]:
+                if not change["points"]:
+                    change["reason"] = "ORIENTATION"
                 changes.append(change)
         return changes
 
@@ -233,6 +255,11 @@ class Structural(bonsai.core.tool.Structural):
 
     @classmethod
     def get_physical_member_axis(cls, obj):
+        data = cls.get_physical_member_data(obj)
+        return data[0] if data else None
+
+    @classmethod
+    def get_physical_member_data(cls, obj):
         element = tool.Ifc.get_entity(obj)
         if not element or not element.is_a("IfcBeam") and not element.is_a("IfcColumn"):
             return None
@@ -253,7 +280,26 @@ class Structural(bonsai.core.tool.Structural):
         end = start + matrix[:3, :3] @ direction * extrusion.Depth * scale
         if np.linalg.norm(end - start) < 1e-9:
             return None
-        return start, end
+        profile = extrusion.SweptArea
+        profile_placement = (
+            ifcopenshell.util.placement.get_placement(profile.Position)
+            if profile.is_a("IfcParameterizedProfileDef") and profile.Position
+            else np.eye(4)
+        )
+        # Structural local X follows the extrusion; local Z follows the profile's Y axis.
+        return (start, end), (matrix @ profile_placement)[:3, 1]
+
+    @classmethod
+    def get_member_orientation(cls, profile_direction, member_direction):
+        direction_length = np.linalg.norm(member_direction)
+        if direction_length < 1e-9:
+            return None
+        direction = member_direction / direction_length
+        orientation = profile_direction - np.dot(profile_direction, direction) * direction
+        length = np.linalg.norm(orientation)
+        if length < 1e-9:
+            return None
+        return orientation / length
 
     @classmethod
     def get_structural_props(cls) -> BIMStructuralProperties:
