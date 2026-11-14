@@ -27,6 +27,7 @@ classes = (
     operator.AddStructuralAnalysisModel,
     operator.EditStructuralMemberDetail,
     operator.SelectStructuralModelMember,
+    operator.UnlinkStructuralModelMember,
     operator.ToggleStructuralModelMemberVisibility,
     operator.ShowStructuralModelMembers,
     operator.GenerateStructuralModel,

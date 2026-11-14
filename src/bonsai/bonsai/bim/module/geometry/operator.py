@@ -553,6 +553,15 @@ class UpdateRepresentation(bpy.types.Operator, tool.Ifc.Operator):
             self.report({"ERROR"}, "Tessellated face sets are not supported in IFC2X3.")
             return {"CANCELLED"}
 
+        if self.ifc_representation_class == "IfcTessellatedFaceSet":
+            members = set()
+            for obj in objs:
+                if element := tool.Ifc.get_entity(obj):
+                    members.update(tool.Structural.get_members_affected_by_material_unassignment(element))
+            if members:
+                self.report({"WARNING"}, f"Material is used by {len(members)} structural members; unlink them first")
+                return {"CANCELLED"}
+
         for obj in objs:
             # TODO: write unit tests to see how this bulk operation handles
             # contradictory ifc_representation_class values and when
@@ -3631,9 +3640,19 @@ class UpdateItemAttributes(bpy.types.Operator, tool.Ifc.Operator):
 
     def _execute(self, context):
         obj = context.active_object
+        representation_obj = tool.Geometry.get_geometry_props().representation_obj
+        if element := tool.Ifc.get_entity(representation_obj):
+            material = ifcopenshell.util.element.get_material(element, should_skip_usage=True)
+            if error := tool.Structural.validate_material_assignment(
+                [element], material, material.is_a() if material else ""
+            ):
+                self.report({"WARNING"}, error)
+                return {"CANCELLED"}
         tool.Geometry.sync_item_positions()
         tool.Geometry.update_item_attributes(obj)
-        tool.Geometry.reload_representation(tool.Geometry.get_geometry_props().representation_obj)
+        if element := tool.Ifc.get_entity(representation_obj):
+            tool.Structural.sync_material_assignment(element, prefer_geometry=True)
+        tool.Geometry.reload_representation(representation_obj)
         tool.Geometry.import_item(obj)
         tool.Root.reload_item_decorator()
 

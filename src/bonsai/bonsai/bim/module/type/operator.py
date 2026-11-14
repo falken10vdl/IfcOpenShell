@@ -87,8 +87,13 @@ class AssignType(bpy.types.Operator, tool.Ifc.Operator):
             self.report({"ERROR"}, f"No selected object can be typed by {relating_type.is_a()}.")
             return {"CANCELLED"}
 
+        if error := tool.Structural.validate_type_assignment([element for _, element in compatible], relating_type):
+            self.report({"WARNING"}, error)
+            return {"CANCELLED"}
+
         for obj, element in compatible:
             core.assign_type(tool.Ifc, tool.Model, tool.Type, element=element, type=relating_type)
+            tool.Structural.sync_material_assignment(element)
 
             # Switch to the drawing's target view if available
             if active_target_view and element.Representation:
@@ -204,6 +209,8 @@ class UnassignType(bpy.types.Operator, tool.Ifc.Operator):
 
         for obj in related_objects:
             self.unassign_and_unmap(obj)
+            if element := tool.Ifc.get_entity(obj):
+                tool.Structural.sync_material_assignment(element)
         return {"FINISHED"}
 
 
@@ -487,6 +494,15 @@ class DuplicateType(bpy.types.Operator, tool.Ifc.Operator):
         obj = tool.Ifc.get_object(element)
         if not obj:
             return {"FINISHED"}
+        if self.assign_selected_objects:
+            selected_elements = [
+                product
+                for selected_obj in tool.Blender.get_selected_objects()
+                if (product := tool.Ifc.get_entity(selected_obj))
+            ]
+            if error := tool.Structural.validate_type_assignment(selected_elements, element):
+                self.report({"WARNING"}, error)
+                return {"CANCELLED"}
         new_obj = obj.copy()
         if obj.data:
             new_obj.data = obj.data.copy()
@@ -515,6 +531,7 @@ class DuplicateType(bpy.types.Operator, tool.Ifc.Operator):
                     skipped_classes.add(selected_element.is_a())
                     continue
                 core.assign_type(tool.Ifc, tool.Model, tool.Type, element=selected_element, type=new)
+                tool.Structural.sync_material_assignment(selected_element)
                 if prefs.occurrence_name_style == "TYPE":
                     selected_obj.name = tool.Model.generate_occurrence_name(new, selected_element.is_a())
             if skipped_classes:

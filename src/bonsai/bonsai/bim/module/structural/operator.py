@@ -466,6 +466,33 @@ class SelectStructuralModelMember(bpy.types.Operator):
         return {"FINISHED"}
 
 
+class UnlinkStructuralModelMember(bpy.types.Operator, tool.Ifc.Operator):
+    bl_idname = "bim.unlink_structural_model_member"
+    bl_label = "Unlink Physical Element"
+    bl_description = "Unlink the physical element; the member and its shared section and material remain"
+    bl_options = {"REGISTER", "UNDO"}
+    member: bpy.props.IntProperty()
+
+    def _execute(self, context):
+        file = tool.Ifc.get()
+        member = file.by_id(self.member)
+        if file.schema == "IFC2X3" and member.ReferencesElement:
+            self.report({"WARNING"}, "IFC2X3 structural element connections cannot be unlinked here")
+            return {"CANCELLED"}
+        sources = ifcopenshell.util.structural.get_building_elements(member)
+        if not sources:
+            self.report({"WARNING"}, "The structural member has no linked physical element")
+            return {"CANCELLED"}
+        for source in sources:
+            tool.Ifc.run("sequence.unassign_product", relating_product=member, related_object=source)
+            tool.Ifc.run("sequence.unassign_product", relating_product=source, related_object=member)
+        links = tool.Structural.get_structural_props().generation_links
+        for index in reversed(range(len(links))):
+            if links[index].member_guid == member.GlobalId:
+                links.remove(index)
+        return {"FINISHED"}
+
+
 class ToggleStructuralModelMemberVisibility(bpy.types.Operator):
     bl_idname = "bim.toggle_structural_model_member_visibility"
     bl_label = "Toggle Structural Member Visibility"
@@ -528,6 +555,9 @@ class StructuralModelGeneration(bpy.types.Operator, tool.Ifc.Operator):
 
     def _execute(self, context):
         file = tool.Ifc.get()
+        if file.schema == "IFC2X3":
+            self.report({"WARNING"}, "Structural model generation is not supported for IFC2X3")
+            return {"CANCELLED"}
         model = (
             file.by_id(self.structural_model)
             if self.structural_model
@@ -540,6 +570,7 @@ class StructuralModelGeneration(bpy.types.Operator, tool.Ifc.Operator):
         sources = []
         updates = []
         skipped = 0
+        missing_material = 0
         unresolved = 0
         selected = {tool.Ifc.get_entity(obj) for obj in context.selected_objects}
         props = tool.Structural.get_structural_props()
@@ -579,6 +610,9 @@ class StructuralModelGeneration(bpy.types.Operator, tool.Ifc.Operator):
             if data is None:
                 skipped += 1
                 continue
+            if not tool.Structural.get_physical_section(element):
+                missing_material += 1
+                continue
             axis, profile_direction = data
             if tool.Structural.get_member_orientation(profile_direction, axis[1] - axis[0]) is None:
                 skipped += 1
@@ -617,7 +651,9 @@ class StructuralModelGeneration(bpy.types.Operator, tool.Ifc.Operator):
 
         if not sources and not updates:
             message = (
-                f"Preserved {unresolved} members with missing or ambiguous source relationships"
+                f"Skipped {missing_material} objects with missing or unsupported materials"
+                if missing_material
+                else f"Preserved {unresolved} members with missing or ambiguous source relationships"
                 if unresolved
                 else "No tracked members to refresh; select linked beams or columns to refresh older members"
                 if self.sync_only
@@ -806,6 +842,7 @@ class StructuralModelGeneration(bpy.types.Operator, tool.Ifc.Operator):
             ifcopenshell.api.structural.edit_structural_item_axis(
                 file, structural_item=member, axis=orientations[member]
             )
+            tool.Structural.assign_member_section(member, ifcopenshell.util.structural.get_building_elements(member)[0])
             context.view_layer.update()
             bonsai.core.geometry.edit_object_placement(tool.Ifc, tool.Geometry, tool.Surveyor, obj=member_obj)
             track_member(member)
@@ -846,6 +883,7 @@ class StructuralModelGeneration(bpy.types.Operator, tool.Ifc.Operator):
             )
             ifcopenshell.api.structural.edit_structural_item_axis(file, structural_item=member, axis=axis_direction)
             ifcopenshell.api.structural.assign_product(file, relating_product=member, related_object=source)
+            tool.Structural.assign_member_section(member, source)
             track_member(member)
             created_members.append(member)
             for connection in node_items:
@@ -857,7 +895,9 @@ class StructuralModelGeneration(bpy.types.Operator, tool.Ifc.Operator):
         for item in {model, *update_members, *created_members, *touched_nodes}:
             remove_legacy_generation_state(item)
 
-        if unresolved:
+        if missing_material:
+            self.report({"WARNING"}, f"Skipped {missing_material} objects with missing or unsupported materials")
+        elif unresolved:
             self.report({"WARNING"}, f"Preserved {unresolved} members with missing or ambiguous source relationships")
         elif self.sync_only and skipped:
             self.report(

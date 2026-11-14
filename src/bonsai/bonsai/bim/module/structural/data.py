@@ -287,12 +287,16 @@ class StructuralModelMemberData:
         if not profiles and source:
             profiles = profiles_of(source)
             profile_source = "Physical element"
+        elif profiles and source and set(profiles).intersection(profiles_of(source)):
+            profile_source = "Member (shared with physical element)"
 
         materials = [material for material in ifcopenshell.util.element.get_materials(member) if material]
         material_source = "Member"
         if not materials and source:
             materials = [material for material in ifcopenshell.util.element.get_materials(source) if material]
             material_source = "Physical element"
+        elif materials and source and set(materials).intersection(ifcopenshell.util.element.get_materials(source)):
+            material_source = "Member (shared with physical element)"
 
         def values(entity):
             result = {}

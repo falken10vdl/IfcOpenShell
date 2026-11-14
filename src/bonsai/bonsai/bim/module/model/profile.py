@@ -28,6 +28,7 @@ import ifcopenshell.api.type
 import ifcopenshell.util.element
 import ifcopenshell.util.placement
 import ifcopenshell.util.representation
+import ifcopenshell.util.structural
 import ifcopenshell.util.type
 import ifcopenshell.util.unit
 import mathutils.geometry
@@ -216,6 +217,17 @@ class DumbProfileRegenerator:
                     element_types.add(element)
 
         DumbProfileRecalculator().recalculate(objs)
+
+        for element in ifcopenshell.util.element.get_elements_by_profile(profile):
+            material = ifcopenshell.util.element.get_material(element)
+            if (
+                (element.is_a("IfcBeam") or element.is_a("IfcColumn"))
+                and material
+                and material.is_a("IfcMaterial")
+                and ifcopenshell.util.structural.get_structural_members(element)
+            ):
+                if obj := tool.Ifc.get_object(element):
+                    tool.Geometry.reload_representation(obj)
 
         # update related thumbnails
         for element in self.get_element_types_using_profile(profile):

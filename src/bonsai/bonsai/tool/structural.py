@@ -26,8 +26,10 @@ from typing import TYPE_CHECKING, Any, Literal, TypedDict, Union
 import bpy
 import ifcopenshell
 import ifcopenshell.api.context
+import ifcopenshell.api.material
 import ifcopenshell.api.structural
 import ifcopenshell.util.attribute
+import ifcopenshell.util.element
 import ifcopenshell.util.placement
 import ifcopenshell.util.representation
 import ifcopenshell.util.structural
@@ -59,10 +61,11 @@ class StructuralAxisChange(TypedDict):
 class StructuralMemberChange(TypedDict):
     member: ifcopenshell.entity_instance
     source: Union[ifcopenshell.entity_instance, None]
-    reason: Literal["AXIS", "ORIENTATION", "MISSING_SOURCE", "MULTIPLE_SOURCES", "UNAVAILABLE"]
+    reason: Literal["AXIS", "ORIENTATION", "SECTION", "MISSING_SOURCE", "MULTIPLE_SOURCES", "UNAVAILABLE"]
     tolerance: float
     points: list[StructuralAxisChange]
     orientation_changed: bool
+    section_changed: bool
 
 
 class Structural(bonsai.core.tool.Structural):
@@ -177,6 +180,7 @@ class Structural(bonsai.core.tool.Structural):
                 "tolerance": tolerance,
                 "points": [],
                 "orientation_changed": False,
+                "section_changed": False,
             }
             if len(sources) != 1:
                 changes.append(change)
@@ -195,6 +199,16 @@ class Structural(bonsai.core.tool.Structural):
                 changes.append(change)
                 continue
             axis, profile_direction = data
+            physical_section = cls.get_physical_section(sources[0])
+            material_set = ifcopenshell.util.element.get_material(member, should_skip_usage=True)
+            member_profiles = (
+                material_set.MaterialProfiles if material_set and material_set.is_a("IfcMaterialProfileSet") else ()
+            ) or ()
+            change["section_changed"] = (
+                not physical_section
+                or len(member_profiles) != 1
+                or (member_profiles[0].Profile, member_profiles[0].Material) != physical_section
+            )
             member_axis = np.array([member_obj.matrix_world @ vertex.co for vertex in member_obj.data.vertices])
             # Blender mesh coordinates and transforms use single precision.
             precision = 2 * np.finfo(np.float32).eps * max(1.0, np.abs(member_axis).max(), np.abs(axis).max())
@@ -223,9 +237,9 @@ class Structural(bonsai.core.tool.Structural):
             change["orientation_changed"] = (
                 expected is None or actual is None or bool(np.linalg.norm(actual - expected) > 1e-6)
             )
-            if change["points"] or change["orientation_changed"]:
+            if change["points"] or change["orientation_changed"] or change["section_changed"]:
                 if not change["points"]:
-                    change["reason"] = "ORIENTATION"
+                    change["reason"] = "ORIENTATION" if change["orientation_changed"] else "SECTION"
                 changes.append(change)
         return changes
 
@@ -288,6 +302,276 @@ class Structural(bonsai.core.tool.Structural):
         )
         # Structural local X follows the extrusion; local Z follows the profile's Y axis.
         return (start, end), (matrix @ profile_placement)[:3, 1]
+
+    @classmethod
+    def get_physical_section(cls, source):
+        representation = ifcopenshell.util.representation.get_representation(source, "Model", "Body", "MODEL_VIEW")
+        if (
+            not representation
+            or len(representation.Items) != 1
+            or not representation.Items[0].is_a("IfcExtrudedAreaSolid")
+        ):
+            return None
+        materials = [material for material in ifcopenshell.util.element.get_materials(source) if material]
+        if len(materials) != 1:
+            return None
+        profile = representation.Items[0].SweptArea
+        material_set = ifcopenshell.util.element.get_material(source, should_skip_usage=True)
+        if material_set and material_set.is_a("IfcMaterialProfileSet"):
+            profiles = material_set.MaterialProfiles or ()
+            if len(profiles) != 1 or profiles[0].Profile != profile or profiles[0].Material != materials[0]:
+                return None
+        elif not material_set or not material_set.is_a("IfcMaterial"):
+            return None
+        return profile, materials[0]
+
+    @classmethod
+    def assign_member_section(cls, member, source):
+        file = tool.Ifc.get()
+        section = cls.get_physical_section(source)
+        if section is None:
+            raise ValueError("A linked physical element requires a section and exactly one material")
+        profile, material = section
+        source_set = ifcopenshell.util.element.get_material(source, should_skip_usage=True)
+        if (
+            source_set
+            and source_set.is_a("IfcMaterialProfileSet")
+            and len(source_set.MaterialProfiles or ()) == 1
+            and source_set.MaterialProfiles[0].Profile == profile
+            and source_set.MaterialProfiles[0].Material == material
+        ):
+            material_set = source_set
+        else:
+            existing = ifcopenshell.util.element.get_material(member, should_skip_usage=True)
+            if (
+                existing
+                and existing.is_a("IfcMaterialProfileSet")
+                and len(existing.MaterialProfiles or ()) == 1
+                and existing.MaterialProfiles[0].Profile == profile
+                and existing.MaterialProfiles[0].Material == material
+            ):
+                return
+            material_set = ifcopenshell.api.material.add_material_set(file, set_type="IfcMaterialProfileSet")
+            ifcopenshell.api.material.add_profile(file, profile_set=material_set, material=material, profile=profile)
+        if ifcopenshell.util.element.get_material(member, should_skip_usage=True) == material_set:
+            return
+        ifcopenshell.api.material.assign_material(file, products=[member], material=material_set)
+
+    @classmethod
+    def validate_material_assignment(cls, products, material, material_type):
+        if tool.Ifc.get().schema == "IFC2X3":
+            return None
+        sources = set()
+        for product in products:
+            if product.is_a("IfcBeamType") or product.is_a("IfcColumnType"):
+                candidates = ifcopenshell.util.element.get_types(product)
+            elif product.is_a("IfcStructuralCurveMember"):
+                candidates = ifcopenshell.util.structural.get_building_elements(product)
+                if len(candidates) > 1:
+                    return "A structural member has multiple physical source elements"
+            else:
+                candidates = [product]
+            for source in candidates:
+                if not (source.is_a("IfcBeam") or source.is_a("IfcColumn")):
+                    continue
+                members = [
+                    member
+                    for member in ifcopenshell.util.structural.get_structural_members(source)
+                    if member.is_a("IfcStructuralCurveMember")
+                ]
+                if not members:
+                    continue
+                if any(ifcopenshell.util.structural.get_building_elements(member) != [source] for member in members):
+                    return "A structural member has multiple physical source elements"
+                sources.add(source)
+        if not sources:
+            return None
+        if not material:
+            return "Linked structural members require a material"
+        if material_type == "IfcMaterial" and material.is_a("IfcMaterial"):
+            pass
+        elif material_type == "IfcMaterialProfileSet" and material.is_a("IfcMaterialProfileSet"):
+            profiles = material.MaterialProfiles or ()
+            if len(profiles) != 1 or not profiles[0].Profile or not profiles[0].Material:
+                return "Linked structural members require a profile set with one profile and material"
+        else:
+            return "Linked structural members require a material or a single-profile material set"
+        for source in sources:
+            representation = ifcopenshell.util.representation.get_representation(source, "Model", "Body", "MODEL_VIEW")
+            if (
+                not representation
+                or len(representation.Items) != 1
+                or not representation.Items[0].is_a("IfcExtrudedAreaSolid")
+            ):
+                return "Linked structural members require an extruded physical section"
+        return None
+
+    @classmethod
+    def validate_type_assignment(cls, products, relating_type):
+        if tool.Ifc.get().schema == "IFC2X3":
+            return None
+        linked = [
+            product
+            for product in products
+            if (product.is_a("IfcBeam") or product.is_a("IfcColumn"))
+            and ifcopenshell.util.structural.get_structural_members(product)
+        ]
+        if not linked:
+            return None
+        if relating_type.RepresentationMaps:
+            return "Linked structural members cannot use a mapped physical representation"
+        material = ifcopenshell.util.element.get_material(relating_type)
+        return cls.validate_material_assignment(linked, material, material.is_a() if material else "")
+
+    @classmethod
+    def get_type_profile_usages(cls, product):
+        if not (product.is_a("IfcBeamType") or product.is_a("IfcColumnType")):
+            return {}
+        material = ifcopenshell.util.element.get_material(product)
+        if not material or not material.is_a("IfcMaterialProfileSet"):
+            return {}
+        occurrences = ifcopenshell.util.element.get_types(product)
+        if not any(ifcopenshell.util.structural.get_structural_members(occurrence) for occurrence in occurrences):
+            return {}
+        result = {}
+        for occurrence in occurrences:
+            usage = ifcopenshell.util.element.get_material(occurrence, should_inherit=False)
+            if usage and usage.is_a("IfcMaterialProfileSetUsage") and usage.ForProfileSet == material:
+                result[occurrence] = (usage.CardinalPoint, usage.ReferenceExtent)
+        return result
+
+    @classmethod
+    def restore_type_profile_usages(cls, product, usages):
+        material = ifcopenshell.util.element.get_material(product)
+        if not material or not material.is_a("IfcMaterialProfileSet"):
+            return
+        for occurrence, (cardinal_point, reference_extent) in usages.items():
+            if ifcopenshell.util.element.get_material(occurrence, should_inherit=False):
+                continue
+            rel = ifcopenshell.api.material.assign_material(
+                tool.Ifc.get(), products=[occurrence], type="IfcMaterialProfileSetUsage", material=material
+            )
+            rel.RelatingMaterial.CardinalPoint = cardinal_point
+            rel.RelatingMaterial.ReferenceExtent = reference_extent
+            if obj := tool.Ifc.get_object(occurrence):
+                tool.Geometry.reload_representation(obj)
+
+    @classmethod
+    def sync_profile_set(cls, material_set, edited_product):
+        cls.sync_material_assignment(edited_product)
+        products = ifcopenshell.util.element.get_elements_by_material(tool.Ifc.get(), material_set)
+        for product in products:
+            if product != edited_product and product.is_a("IfcStructuralCurveMember"):
+                cls.sync_material_assignment(product)
+        for product in products:
+            if product != edited_product and (product.is_a("IfcBeam") or product.is_a("IfcColumn")):
+                cls.sync_material_assignment(product)
+            elif product.is_a("IfcBeamType") or product.is_a("IfcColumnType"):
+                cls.sync_material_assignment(product)
+
+    @classmethod
+    def sync_material_assignment(cls, product, prefer_geometry=False):
+        file = tool.Ifc.get()
+        if file.schema == "IFC2X3":
+            return
+        if product.is_a("IfcBeamType") or product.is_a("IfcColumnType"):
+            for occurrence in ifcopenshell.util.element.get_types(product):
+                cls.sync_material_assignment(occurrence)
+            return
+        if product.is_a("IfcStructuralCurveMember"):
+            sources = ifcopenshell.util.structural.get_building_elements(product)
+            if not sources:
+                return
+            if len(sources) != 1:
+                raise ValueError("A structural member has multiple physical source elements")
+            source = sources[0]
+            if not (source.is_a("IfcBeam") or source.is_a("IfcColumn")):
+                return
+            assigned = ifcopenshell.util.element.get_material(product, should_skip_usage=True)
+            materials = [item for item in ifcopenshell.util.element.get_materials(product) if item]
+            if not assigned or len(materials) != 1:
+                raise ValueError("A linked structural member requires exactly one material")
+            source_material = ifcopenshell.util.element.get_material(source, should_skip_usage=True)
+            if assigned == source_material:
+                pass
+            elif assigned.is_a("IfcMaterialProfileSet"):
+                profiles = assigned.MaterialProfiles or ()
+                if len(profiles) != 1 or not profiles[0].Profile:
+                    raise ValueError("A linked structural member requires exactly one section profile")
+                representation = ifcopenshell.util.representation.get_representation(
+                    source, "Model", "Body", "MODEL_VIEW"
+                )
+                previous_profile = representation.Items[0].SweptArea
+                ifcopenshell.api.material.assign_material(
+                    file, products=[source], type="IfcMaterialProfileSetUsage", material=assigned
+                )
+                if previous_profile != profiles[0].Profile:
+                    if obj := tool.Ifc.get_object(source):
+                        tool.Geometry.reload_representation(obj)
+            else:
+                ifcopenshell.api.material.assign_material(file, products=[source], material=materials[0])
+            product = source
+
+        if product.is_a("IfcBeam") or product.is_a("IfcColumn"):
+            members = ifcopenshell.util.structural.get_structural_members(product)
+            if not members:
+                return
+            for member in members:
+                if member.is_a("IfcStructuralCurveMember") and ifcopenshell.util.structural.get_building_elements(
+                    member
+                ) != [product]:
+                    raise ValueError("A structural member has multiple physical source elements")
+            material = ifcopenshell.util.element.get_material(product, should_skip_usage=True)
+            representation = ifcopenshell.util.representation.get_representation(product, "Model", "Body", "MODEL_VIEW")
+            if material and material.is_a("IfcMaterialProfileSet") and representation:
+                profiles = material.MaterialProfiles or ()
+                if (
+                    len(profiles) != 1
+                    or not profiles[0].Profile
+                    or len(representation.Items) != 1
+                    or not representation.Items[0].is_a("IfcExtrudedAreaSolid")
+                ):
+                    raise ValueError("A linked physical element requires exactly one supported section profile")
+                extrusion = representation.Items[0]
+                if extrusion.SweptArea != profiles[0].Profile:
+                    if prefer_geometry:
+                        ifcopenshell.api.material.assign_profile(
+                            file, material_profile=profiles[0], profile=extrusion.SweptArea
+                        )
+                    else:
+                        extrusion.SweptArea = profiles[0].Profile
+                    if obj := tool.Ifc.get_object(product):
+                        tool.Geometry.reload_representation(obj)
+            if members and not cls.get_physical_section(product):
+                raise ValueError("A linked physical element requires a section and exactly one material")
+            for member in members:
+                if member.is_a("IfcStructuralCurveMember"):
+                    cls.assign_member_section(member, product)
+
+    @classmethod
+    def get_members_using_material(cls, material):
+        return {
+            element
+            for element in ifcopenshell.util.element.get_elements_by_material(tool.Ifc.get(), material)
+            if element.is_a("IfcStructuralCurveMember")
+        }
+
+    @classmethod
+    def get_members_affected_by_material_unassignment(cls, element):
+        if element.is_a("IfcStructuralCurveMember"):
+            return {element} if ifcopenshell.util.structural.get_building_elements(element) else set()
+        affected = {element}
+        if element.is_a("IfcTypeObject"):
+            affected.update(ifcopenshell.util.element.get_types(element))
+        material = ifcopenshell.util.element.get_material(element, should_inherit=False)
+        if not material or "Usage" in material.is_a():
+            if element_type := ifcopenshell.util.element.get_type(element):
+                affected.update(ifcopenshell.util.element.get_types(element_type))
+        members = set()
+        for source in affected:
+            if source.is_a("IfcBeam") or source.is_a("IfcColumn"):
+                members.update(ifcopenshell.util.structural.get_structural_members(source))
+        return members
 
     @classmethod
     def get_member_orientation(cls, profile_direction, member_direction):

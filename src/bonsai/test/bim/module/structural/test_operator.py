@@ -21,6 +21,7 @@ from mathutils import Vector
 
 import bonsai.tool as tool
 from bonsai.bim.ifc import IfcStore
+from bonsai.bim.module.model.data import ItemData
 from bonsai.bim.module.structural.data import LoadGroupDecorationData, StructuralModelMemberData
 from bonsai.bim.module.structural.data import refresh as refresh_structural_data
 from bonsai.bim.module.structural.decorator import LoadsDecorator
@@ -379,7 +380,345 @@ class TestShowStructuralModelMembers(NewIfc):
         assert bpy.context.view_layer.objects.active == objects[0]
 
 
+class TestGenerateStructuralModelIfc2x3(NewFile):
+    def test_generation_is_rejected_without_changing_ifc(self, capsys):
+        tool.Project.get_project_props().export_schema = "IFC2X3"
+        bpy.ops.bim.create_project()
+        ifc = tool.Ifc.get()
+        ifcopenshell.api.structural.add_structural_analysis_model(ifc)
+        before = ifc.to_string()
+        bpy.ops.bim.generate_structural_model()
+        assert "not supported for IFC2X3" in capsys.readouterr().out
+        assert ifc.to_string() == before
+
+    def test_unlink_does_not_claim_to_remove_ifc2x3_structural_connection(self, capsys):
+        tool.Project.get_project_props().export_schema = "IFC2X3"
+        bpy.ops.bim.create_project()
+        ifc = tool.Ifc.get()
+        source = ifcopenshell.api.root.create_entity(ifc, ifc_class="IfcBeam")
+        member = ifcopenshell.api.root.create_entity(ifc, ifc_class="IfcStructuralCurveMember")
+        connection = ifcopenshell.api.root.create_entity(ifc, ifc_class="IfcRelConnectsStructuralElement")
+        connection.RelatingElement = source
+        connection.RelatedStructuralMember = member
+        before = ifc.to_string()
+        bpy.ops.bim.unlink_structural_model_member(member=member.id())
+        assert "cannot be unlinked" in capsys.readouterr().out
+        assert ifc.to_string() == before
+
+
+class TestGenerateStructuralModelIfc4x3(NewFile):
+    def test_member_has_section_and_material(self):
+        tool.Project.get_project_props().export_schema = "IFC4X3_ADD2"
+        bpy.ops.bim.create_project()
+        ifc = tool.Ifc.get()
+        model_context = ifcopenshell.util.representation.get_context(ifc, "Model")
+        body = ifcopenshell.api.context.add_context(
+            ifc, context_type="Model", context_identifier="Body", target_view="MODEL_VIEW", parent=model_context
+        )
+        profile = ifcopenshell.api.profile.add_parameterized_profile(ifc, ifc_class="IfcRectangleProfileDef")
+        profile.XDim, profile.YDim = 0.2, 0.3
+        material = ifcopenshell.api.material.add_material(ifc, name="Steel")
+        ifcopenshell.api.structural.add_structural_analysis_model(ifc)
+        source = ifcopenshell.api.root.create_entity(ifc, ifc_class="IfcColumn")
+        representation = ifcopenshell.api.geometry.add_profile_representation(
+            ifc, context=body, profile=profile, depth=3
+        )
+        ifcopenshell.api.geometry.assign_representation(ifc, product=source, representation=representation)
+        ifcopenshell.api.material.assign_material(ifc, products=[source], material=material)
+        obj = bpy.data.objects.new("Column", bpy.data.meshes.new("Column"))
+        bpy.context.scene.collection.objects.link(obj)
+        tool.Ifc.link(source, obj)
+        obj.select_set(True)
+        bpy.context.view_layer.objects.active = obj
+        bpy.context.view_layer.update()
+        bpy.ops.bim.generate_structural_model()
+        member = ifcopenshell.util.structural.get_structural_members(source)[0]
+        member_profile = ifcopenshell.util.element.get_material(member, should_skip_usage=True).MaterialProfiles[0]
+        assert member_profile.Profile == profile
+        assert member_profile.Material == material
+
+
 class TestGenerateStructuralModel(NewIfc):
+    def test_replacing_unnamed_extrusion_profile_preserves_shared_member_profile(self):
+        ifc = tool.Ifc.get()
+        model_context = ifcopenshell.util.representation.get_context(ifc, "Model")
+        body = ifcopenshell.api.context.add_context(
+            ifc, context_type="Model", context_identifier="Body", target_view="MODEL_VIEW", parent=model_context
+        )
+        old_profile = ifcopenshell.api.profile.add_parameterized_profile(ifc, ifc_class="IfcRectangleProfileDef")
+        old_profile.XDim, old_profile.YDim = 0.2, 0.3
+        new_profile = ifcopenshell.api.profile.add_parameterized_profile(ifc, ifc_class="IfcRectangleProfileDef")
+        new_profile.ProfileName, new_profile.XDim, new_profile.YDim = "New section", 0.4, 0.5
+        material = ifcopenshell.api.material.add_material(ifc, name="Steel")
+        source = ifcopenshell.api.root.create_entity(ifc, ifc_class="IfcBeam")
+        representation = ifcopenshell.api.geometry.add_profile_representation(
+            ifc, context=body, profile=old_profile, depth=3
+        )
+        ifcopenshell.api.geometry.assign_representation(ifc, product=source, representation=representation)
+        ifcopenshell.api.material.assign_material(ifc, products=[source], material=material)
+        member = ifcopenshell.api.root.create_entity(ifc, ifc_class="IfcStructuralCurveMember")
+        ifcopenshell.api.structural.assign_product(ifc, relating_product=member, related_object=source)
+        tool.Structural.assign_member_section(member, source)
+        source_obj = bpy.data.objects.new("Beam", bpy.data.meshes.new("Beam"))
+        bpy.context.scene.collection.objects.link(source_obj)
+        tool.Ifc.link(source, source_obj)
+        tool.Geometry.link(representation, source_obj.data)
+        tool.Geometry.get_geometry_props().representation_obj = source_obj
+        ItemData.is_loaded = False
+        item = representation.Items[0]
+        item_obj = bpy.data.objects.new("Extrusion", bpy.data.meshes.new("Extrusion"))
+        bpy.context.scene.collection.objects.link(item_obj)
+        tool.Geometry.link(item, item_obj.data)
+        tool.Geometry.get_mesh_props(item_obj.data).item_profile = str(new_profile.id())
+
+        tool.Geometry.update_item_attributes(item_obj)
+        assert ifc.by_id(old_profile.id()) == old_profile
+        assert (
+            ifcopenshell.util.element.get_material(member, should_skip_usage=True).MaterialProfiles[0].Profile
+            == old_profile
+        )
+        tool.Structural.sync_material_assignment(source, prefer_geometry=True)
+        assert (
+            ifcopenshell.util.element.get_material(member, should_skip_usage=True).MaterialProfiles[0].Profile
+            == new_profile
+        )
+
+    @pytest.mark.parametrize("reverse_link", [False, True])
+    def test_unlink_preserves_other_relationships_and_member(self, reverse_link):
+        ifc = tool.Ifc.get()
+        model = ifcopenshell.api.structural.add_structural_analysis_model(ifc)
+        member = ifcopenshell.api.root.create_entity(ifc, ifc_class="IfcStructuralCurveMember")
+        source = ifcopenshell.api.root.create_entity(ifc, ifc_class="IfcBeam")
+        other = ifcopenshell.api.root.create_entity(ifc, ifc_class="IfcTask")
+        if reverse_link:
+            ifcopenshell.api.structural.assign_product(ifc, relating_product=source, related_object=member)
+            ifcopenshell.api.structural.assign_product(ifc, relating_product=source, related_object=other)
+        else:
+            ifcopenshell.api.structural.assign_product(ifc, relating_product=member, related_object=source)
+            ifcopenshell.api.structural.assign_product(ifc, relating_product=member, related_object=other)
+        link = tool.Structural.get_structural_props().generation_links.add()
+        link.model_guid, link.member_guid = model.GlobalId, member.GlobalId
+        bpy.ops.bim.unlink_structural_model_member(member=member.id())
+        assert not ifcopenshell.util.structural.get_building_elements(member)
+        assert any(other in rel.RelatedObjects for rel in ifc.by_type("IfcRelAssignsToProduct"))
+        assert member in ifc.by_type("IfcStructuralCurveMember")
+        assert not tool.Structural.get_structural_props().generation_links
+
+    def test_material_replacement_is_synchronised_in_both_directions(self, capsys):
+        ifc = tool.Ifc.get()
+        model_context = ifcopenshell.util.representation.get_context(ifc, "Model")
+        body = ifcopenshell.api.context.add_context(
+            ifc, context_type="Model", context_identifier="Body", target_view="MODEL_VIEW", parent=model_context
+        )
+        profile = ifcopenshell.api.profile.add_parameterized_profile(ifc, ifc_class="IfcRectangleProfileDef")
+        profile.XDim, profile.YDim = 0.2, 0.3
+        model = ifcopenshell.api.structural.add_structural_analysis_model(ifc)
+        source = ifcopenshell.api.root.create_entity(ifc, ifc_class="IfcBeam")
+        representation = ifcopenshell.api.geometry.add_profile_representation(
+            ifc, context=body, profile=profile, depth=3
+        )
+        ifcopenshell.api.geometry.assign_representation(ifc, product=source, representation=representation)
+        materials = [ifcopenshell.api.material.add_material(ifc, name=name) for name in ("Steel", "Concrete", "Timber")]
+        obj = bpy.data.objects.new("Beam", bpy.data.meshes.new("Beam"))
+        bpy.context.scene.collection.objects.link(obj)
+        tool.Ifc.link(source, obj)
+        tool.Geometry.link(representation, obj.data)
+        obj.select_set(True)
+        bpy.context.view_layer.objects.active = obj
+        bpy.context.view_layer.update()
+        bpy.ops.bim.generate_structural_model()
+        assert not ifc.by_type("IfcStructuralCurveMember")
+        assert "missing or unsupported materials" in capsys.readouterr().out
+        layers = ifcopenshell.api.material.add_material_set(ifc, set_type="IfcMaterialLayerSet")
+        ifcopenshell.api.material.add_layer(ifc, layer_set=layers, material=materials[0])
+        ifcopenshell.api.material.assign_material(ifc, products=[source], material=layers)
+        bpy.ops.bim.generate_structural_model()
+        assert not ifc.by_type("IfcStructuralCurveMember")
+        assert "missing or unsupported materials" in capsys.readouterr().out
+        ifcopenshell.api.material.assign_material(ifc, products=[source], material=materials[0])
+        bpy.ops.bim.generate_structural_model()
+        member = ifcopenshell.util.structural.get_structural_members(source)[0]
+        StructuralModelMemberData.load(member)
+        assert StructuralModelMemberData.data["profile_source"] == "Member (shared with physical element)"
+        assert StructuralModelMemberData.data["material_source"] == "Member (shared with physical element)"
+        tool.Geometry.reload_representation(obj)
+        tool.Structural.set_current_structural_analysis_model(model)
+        props = tool.Structural.get_structural_props()
+        props.active_structural_model_member_index = 0
+        next(row for row in props.structural_member_details if row.name == "XDim").value = "0.8"
+        assert profile.XDim == pytest.approx(0.8)
+        assert max(vertex.co.x for vertex in obj.data.vertices) - min(
+            vertex.co.x for vertex in obj.data.vertices
+        ) == pytest.approx(0.8)
+        ifcopenshell.api.material.assign_material(ifc, products=[source], material=materials[1])
+        assert tool.Structural.get_member_changes(model)[0]["reason"] == "SECTION"
+        ifcopenshell.api.material.assign_material(ifc, products=[source], material=materials[0])
+
+        bpy.ops.object.select_all(action="DESELECT")
+        obj.select_set(True)
+        bpy.context.view_layer.objects.active = obj
+        before_assignment = ifc.to_string()
+        previous_transaction = IfcStore.history[-1]["key"]
+        history_before = len(IfcStore.history)
+        bpy.ops.bim.assign_material_to_selected(material=materials[1].id())
+        assert ifcopenshell.util.element.get_materials(source) == [materials[1]]
+        assert ifcopenshell.util.element.get_materials(member) == [materials[1]]
+        assert len(IfcStore.history) == history_before + 1
+        assignment_transaction = IfcStore.history[-1]["key"]
+        after_assignment = ifc.to_string()
+        IfcStore.undo(until_key=previous_transaction)
+        assert ifc.to_string() == before_assignment
+        IfcStore.redo(until_key=assignment_transaction)
+        assert ifc.to_string() == after_assignment
+
+        bpy.ops.object.select_all(action="DESELECT")
+        member_obj = tool.Ifc.get_object(member)
+        bpy.ops.bim.select_structural_model_member(member=member.id())
+        bpy.ops.bim.assign_material_to_selected(material=materials[2].id())
+        assert ifcopenshell.util.element.get_materials(source) == [materials[2]]
+        assert ifcopenshell.util.element.get_materials(member) == [materials[2]]
+        assert (
+            ifcopenshell.util.element.get_material(member, should_skip_usage=True).MaterialProfiles[0].Profile
+            == profile
+        )
+        bpy.ops.bim.unassign_material(obj=obj.name)
+        assert "1 structural members" in capsys.readouterr().out
+        assert ifcopenshell.util.element.get_materials(source) == [materials[2]]
+        assert ifcopenshell.util.element.get_materials(member) == [materials[2]]
+        bpy.ops.bim.remove_material(material=materials[2].id())
+        assert "1 structural members" in capsys.readouterr().out
+        assert materials[2] in ifc.by_type("IfcMaterial")
+        new_profile = ifcopenshell.api.profile.add_parameterized_profile(ifc, ifc_class="IfcRectangleProfileDef")
+        new_profile.XDim, new_profile.YDim = 0.4, 0.5
+        section = ifcopenshell.api.material.add_material_set(ifc, set_type="IfcMaterialProfileSet")
+        ifcopenshell.api.material.add_profile(ifc, profile_set=section, material=materials[2], profile=new_profile)
+        bpy.ops.bim.assign_material_to_selected(material=section.id(), should_auto_assign_usage=False)
+        assert representation.Items[0].SweptArea == new_profile
+        assert ifcopenshell.util.element.get_material(member, should_skip_usage=True) == section
+        assert ifcopenshell.util.element.get_material(source, should_skip_usage=True) == section
+        other_profile = ifcopenshell.api.profile.add_parameterized_profile(ifc, ifc_class="IfcRectangleProfileDef")
+        other_profile.XDim, other_profile.YDim = 0.6, 0.7
+        other_section = ifcopenshell.api.material.add_material_set(ifc, set_type="IfcMaterialProfileSet")
+        ifcopenshell.api.material.add_profile(
+            ifc, profile_set=other_section, material=materials[1], profile=other_profile
+        )
+        bpy.ops.object.select_all(action="DESELECT")
+        obj.select_set(True)
+        bpy.context.view_layer.objects.active = obj
+        bpy.ops.bim.assign_material_to_selected(material=other_section.id())
+        assert representation.Items[0].SweptArea == other_profile
+        assert ifcopenshell.util.element.get_material(source, should_skip_usage=True) == other_section
+        assert ifcopenshell.util.element.get_material(member, should_skip_usage=True) == other_section
+        empty_section = ifcopenshell.api.material.add_material_set(ifc, set_type="IfcMaterialProfileSet")
+        before_invalid_assignment = ifc.to_string()
+        bpy.ops.bim.assign_material_to_selected(material=empty_section.id())
+        assert "profile set with one profile and material" in capsys.readouterr().out
+        assert ifc.to_string() == before_invalid_assignment
+        invalid_type = ifcopenshell.api.root.create_entity(ifc, ifc_class="IfcBeamType")
+        before_invalid_type = ifc.to_string()
+        bpy.ops.bim.assign_type(relating_type=invalid_type.id(), related_object=obj.name)
+        assert "require a material" in capsys.readouterr().out
+        assert ifc.to_string() == before_invalid_type
+        beam_type = ifcopenshell.api.root.create_entity(ifc, ifc_class="IfcBeamType", name="Typed beam")
+        ifcopenshell.api.material.assign_material(ifc, products=[beam_type], material=section)
+        bpy.ops.bim.assign_type(relating_type=beam_type.id(), related_object=obj.name)
+        assert ifcopenshell.util.element.get_material(source, should_skip_usage=True) == section
+        assert ifcopenshell.util.element.get_material(member, should_skip_usage=True) == section
+        assert representation.Items[0].SweptArea == new_profile
+        source_usage = ifcopenshell.util.element.get_material(source, should_inherit=False)
+        assert source_usage.is_a("IfcMaterialProfileSetUsage")
+        source_usage.CardinalPoint = 3
+        other_type = ifcopenshell.api.root.create_entity(ifc, ifc_class="IfcBeamType")
+        ifcopenshell.api.material.assign_material(ifc, products=[other_type], material=section)
+        other_beam = ifcopenshell.api.root.create_entity(ifc, ifc_class="IfcBeam")
+        ifcopenshell.api.type.assign_type(ifc, related_objects=[other_beam], relating_type=other_type)
+        other_representation = ifcopenshell.api.geometry.add_profile_representation(
+            ifc, context=body, profile=new_profile, depth=3
+        )
+        ifcopenshell.api.geometry.assign_representation(ifc, product=other_beam, representation=other_representation)
+        ifcopenshell.api.material.assign_material(
+            ifc, products=[other_beam], type="IfcMaterialProfileSetUsage", material=section
+        )
+        other_obj = bpy.data.objects.new("Other beam", bpy.data.meshes.new("Other beam"))
+        bpy.context.scene.collection.objects.link(other_obj)
+        tool.Ifc.link(other_beam, other_obj)
+        tool.Geometry.link(other_representation, other_obj.data)
+        other_member = ifcopenshell.api.root.create_entity(ifc, ifc_class="IfcStructuralCurveMember")
+        ifcopenshell.api.material.assign_material(ifc, products=[other_member], material=section)
+        ifcopenshell.api.structural.assign_product(ifc, relating_product=other_member, related_object=other_beam)
+        override_beam = ifcopenshell.api.root.create_entity(ifc, ifc_class="IfcBeam")
+        ifcopenshell.api.type.assign_type(ifc, related_objects=[override_beam], relating_type=beam_type)
+        ifcopenshell.api.material.assign_material(
+            ifc, products=[override_beam], type="IfcMaterialProfileSetUsage", material=other_section
+        )
+        type_obj = bpy.data.objects.new("Beam type", None)
+        bpy.context.scene.collection.objects.link(type_obj)
+        tool.Ifc.link(beam_type, type_obj)
+        bpy.ops.object.select_all(action="DESELECT")
+        type_obj.select_set(True)
+        bpy.context.view_layer.objects.active = type_obj
+        before_type_assignment = ifc.to_string()
+        previous_transaction = IfcStore.history[-1]["key"]
+        bpy.ops.bim.assign_material_to_selected(material=other_section.id())
+        assert ifcopenshell.util.element.get_material(source, should_skip_usage=True) == other_section
+        assert ifcopenshell.util.element.get_material(member, should_skip_usage=True) == other_section
+        assert ifcopenshell.util.element.get_material(source, should_inherit=False).CardinalPoint == 3
+        assert ifcopenshell.util.element.get_material(other_beam, should_inherit=False).ForProfileSet == section
+        assert ifcopenshell.util.element.get_material(other_member, should_skip_usage=True) == section
+        assert (
+            ifcopenshell.util.element.get_material(override_beam, should_inherit=False).ForProfileSet == other_section
+        )
+        type_transaction = IfcStore.history[-1]["key"]
+        after_type_assignment = ifc.to_string()
+        IfcStore.undo(until_key=previous_transaction)
+        assert ifc.to_string() == before_type_assignment
+        IfcStore.redo(until_key=type_transaction)
+        assert ifc.to_string() == after_type_assignment
+        bpy.ops.bim.assign_material_to_selected(material=section.id())
+        bpy.ops.object.select_all(action="DESELECT")
+        obj.select_set(True)
+        bpy.context.view_layer.objects.active = obj
+        before_add_profile = ifc.to_string()
+        bpy.ops.bim.add_profile(obj=obj.name, profile_set=section.id())
+        assert "used by 2 structural members" in capsys.readouterr().out
+        assert ifc.to_string() == before_add_profile
+        other_profile.ProfileName = "Other profile"
+        bpy.ops.bim.enable_editing_material_set_item(obj=obj.name, material_set_item=section.MaterialProfiles[0].id())
+        tool.Material.get_material_props().profiles = str(other_profile.id())
+        tool.Material.get_object_material_props(obj).material_set_item_material = str(materials[1].id())
+        bpy.ops.bim.edit_material_set_item(obj=obj.name, material_set_item=section.MaterialProfiles[0].id())
+        assert ifcopenshell.util.element.get_materials(source) == [materials[1]]
+        assert ifcopenshell.util.element.get_materials(member) == [materials[1]]
+        current_representation = ifcopenshell.util.representation.get_representation(
+            source, "Model", "Body", "MODEL_VIEW"
+        )
+        assert current_representation.Items[0].SweptArea == other_profile
+        other_current_representation = ifcopenshell.util.representation.get_representation(
+            other_beam, "Model", "Body", "MODEL_VIEW"
+        )
+        assert other_current_representation.Items[0].SweptArea == other_profile
+        assert ifcopenshell.util.element.get_materials(other_member) == [materials[1]]
+        tool.Structural.set_current_structural_analysis_model(model)
+        props = tool.Structural.get_structural_props()
+        props.active_structural_model_member_index = 0
+        next(row for row in props.structural_member_details if row.name == "XDim").value = "0.8"
+        assert other_profile.XDim == pytest.approx(0.8)
+        assert section.MaterialProfiles[0].Profile == other_profile
+        bpy.ops.bim.assign_parameterized_profile(
+            ifc_class="IfcCircleProfileDef", material_profile=section.MaterialProfiles[0].id(), obj=member_obj.name
+        )
+        current_representation = ifcopenshell.util.representation.get_representation(
+            source, "Model", "Body", "MODEL_VIEW"
+        )
+        assert current_representation.Items[0].SweptArea == section.MaterialProfiles[0].Profile
+        assert section.MaterialProfiles[0].Profile.is_a("IfcCircleProfileDef")
+        bpy.ops.bim.unlink_structural_model_member(member=member.id())
+        assert not ifcopenshell.util.structural.get_building_elements(member)
+        assert member in ifc.by_type("IfcStructuralCurveMember")
+        bpy.ops.bim.unassign_material(obj=member_obj.name)
+        assert not ifcopenshell.util.element.get_materials(member)
+        assert ifcopenshell.util.element.get_materials(source) == [materials[1]]
+
     @pytest.mark.parametrize(
         "ifc_class,rotation,initial_axis,updated_axis,profile_axis,member_direction",
         [
@@ -411,6 +750,8 @@ class TestGenerateStructuralModel(NewIfc):
             ifc, context=body, profile=profile, depth=3, placement_zx_axes=(None, (0.0, 1.0, 0.0))
         )
         ifcopenshell.api.geometry.assign_representation(ifc, product=source, representation=representation)
+        material = ifcopenshell.api.material.add_material(ifc, name="Steel")
+        ifcopenshell.api.material.assign_material(ifc, products=[source], material=material)
         obj = bpy.data.objects.new(ifc_class, bpy.data.meshes.new(ifc_class))
         bpy.context.scene.collection.objects.link(obj)
         tool.Ifc.link(source, obj)
@@ -421,6 +762,10 @@ class TestGenerateStructuralModel(NewIfc):
 
         bpy.ops.bim.generate_structural_model()
         member = ifcopenshell.util.structural.get_structural_members(source)[0]
+        member_set = ifcopenshell.util.element.get_material(member, should_skip_usage=True)
+        assert member_set.is_a("IfcMaterialProfileSet")
+        assert member_set.MaterialProfiles[0].Profile == profile
+        assert member_set.MaterialProfiles[0].Material == material
         assert member.Axis.DirectionRatios == pytest.approx(initial_axis, abs=1e-6)
         assert not tool.Structural.get_member_changes(model)
         representation.Items[0].Position.RefDirection.DirectionRatios = (-1.0, 0.0, 0.0)
@@ -495,6 +840,8 @@ class TestGenerateStructuralModel(NewIfc):
             ifc, context=body, profile=profile, depth=3.1
         )
         ifcopenshell.api.geometry.assign_representation(ifc, product=source, representation=representation)
+        material = ifcopenshell.api.material.add_material(ifc, name="Steel")
+        ifcopenshell.api.material.assign_material(ifc, products=[source], material=material)
         obj = bpy.data.objects.new("Column", bpy.data.meshes.new("Column"))
         bpy.context.scene.collection.objects.link(obj)
         tool.Ifc.link(source, obj)
@@ -606,6 +953,7 @@ class TestGenerateStructuralModel(NewIfc):
         profile.XDim, profile.YDim = 0.2, 0.3
         model = ifcopenshell.api.structural.add_structural_analysis_model(ifc)
         tool.Structural.get_structural_props().generation_merge_tolerance = tolerance
+        material = ifcopenshell.api.material.add_material(ifc, name="Steel")
         sources = []
         for index, height in enumerate((0.0, 3.05 if tolerance else 3.0)):
             source = ifcopenshell.api.root.create_entity(ifc, ifc_class="IfcColumn", name=f"Column {index}")
@@ -613,6 +961,7 @@ class TestGenerateStructuralModel(NewIfc):
                 ifc, context=body, profile=profile, depth=3
             )
             ifcopenshell.api.geometry.assign_representation(ifc, product=source, representation=representation)
+            ifcopenshell.api.material.assign_material(ifc, products=[source], material=material)
             obj = bpy.data.objects.new(source.Name, bpy.data.meshes.new(source.Name))
             bpy.context.scene.collection.objects.link(obj)
             tool.Ifc.link(source, obj)
@@ -704,6 +1053,7 @@ class TestGenerateStructuralModel(NewIfc):
             ifc, context=body, profile=profile, depth=3
         )
         ifcopenshell.api.geometry.assign_representation(ifc, product=new_source, representation=representation)
+        ifcopenshell.api.material.assign_material(ifc, products=[new_source], material=material)
         obj = bpy.data.objects.new(new_source.Name, bpy.data.meshes.new(new_source.Name))
         bpy.context.scene.collection.objects.link(obj)
         tool.Ifc.link(new_source, obj)

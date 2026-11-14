@@ -22,6 +22,7 @@ import itertools
 from typing import TYPE_CHECKING, Any, Union
 
 import bpy
+import ifcopenshell.util.structural
 from bpy.types import Panel, UIList
 
 import bonsai.bim.helper
@@ -488,6 +489,8 @@ class BIM_PT_generate_structural_model(Panel):
             else:
                 if change["orientation_changed"]:
                     box.label(text="Profile orientation differs", icon="ERROR")
+                if change["section_changed"]:
+                    box.label(text="Section or material differs", icon="ERROR")
                 for point in change["points"]:
                     member_position = ", ".join(f"{value:.9g}" for value in point["member_point"])
                     source_position = ", ".join(f"{value:.9g}" for value in point["source_point"])
@@ -578,6 +581,9 @@ class BIM_PT_structural_model_members(Panel):
             return
         self.layout.separator()
         self.layout.label(text=f"{member.Name or 'Unnamed'} ({member.is_a()})", icon="OUTLINER_OB_MESH")
+        if ifcopenshell.util.structural.get_building_elements(member):
+            op = self.layout.operator("bim.unlink_structural_model_member", icon="UNLINKED")
+            op.member = member.id()
         self.layout.template_list(
             "BIM_UL_structural_member_details",
             "",
