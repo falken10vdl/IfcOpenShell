@@ -124,6 +124,7 @@ classes = (
     wall.OffsetWalls,
     wall.RecalculateWall,
     wall.RotateWall90,
+    wall.AlignLocalXToLength,
     wall.SplitWall,
     wall.SplitWallAtCursor,
     wall.DisconnectElements,
