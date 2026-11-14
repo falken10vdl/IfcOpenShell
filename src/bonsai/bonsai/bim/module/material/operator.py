@@ -25,6 +25,7 @@ import ifcopenshell.api.profile
 import ifcopenshell.api.style
 import ifcopenshell.util.element
 import ifcopenshell.util.representation
+import ifcopenshell.util.structural
 
 import bonsai.bim.helper
 import bonsai.bim.module.model.profile as model_profile
@@ -144,15 +145,27 @@ class AssignParameterizedProfile(bpy.types.Operator, tool.Ifc.Operator):
     def _execute(self, context):
         obj = bpy.data.objects.get(self.obj) if self.obj else context.active_object
         self.file = tool.Ifc.get()
+        material_profile = self.file.by_id(self.material_profile)
+        element = tool.Ifc.get_entity(obj)
+        for material_set in material_profile.ToMaterialProfileSet:
+            products = ifcopenshell.util.element.get_elements_by_material(self.file, material_set)
+            if element:
+                products.add(element)
+            if error := tool.Structural.validate_material_assignment(products, material_set, "IfcMaterialProfileSet"):
+                self.report({"WARNING"}, error)
+                return {"CANCELLED"}
         profile = ifcopenshell.api.profile.add_parameterized_profile(
             self.file,
             ifc_class=self.ifc_class,
         )
         ifcopenshell.api.material.assign_profile(
             self.file,
-            material_profile=self.file.by_id(self.material_profile),
+            material_profile=material_profile,
             profile=profile,
         )
+        if element:
+            for material_set in material_profile.ToMaterialProfileSet:
+                tool.Structural.sync_profile_set(material_set, element)
         bpy.ops.bim.enable_editing_material_set_item(obj=obj.name, material_set_item=self.material_profile)
 
 
@@ -210,7 +223,12 @@ class RemoveMaterial(bpy.types.Operator, tool.Ifc.Operator):
     material: bpy.props.IntProperty()
 
     def _execute(self, context):
-        res = core.remove_material(tool.Ifc, tool.Material, material=tool.Ifc.get().by_id(self.material))
+        material = tool.Ifc.get().by_id(self.material)
+        members = tool.Structural.get_members_using_material(material)
+        if members:
+            self.report({"WARNING"}, f"Material is used by {len(members)} structural members; unlink it first")
+            return {"CANCELLED"}
+        res = core.remove_material(tool.Ifc, tool.Material, material=material)
         if not res:
             self.report({"ERROR"}, "Material is used in material sets and cannot be removed.")
             return {"CANCELLED"}
@@ -223,7 +241,12 @@ class RemoveMaterialSet(bpy.types.Operator, tool.Ifc.Operator):
     material: bpy.props.IntProperty()
 
     def _execute(self, context):
-        core.remove_material_set(tool.Ifc, tool.Material, material=tool.Ifc.get().by_id(self.material))
+        material = tool.Ifc.get().by_id(self.material)
+        members = tool.Structural.get_members_using_material(material)
+        if members:
+            self.report({"WARNING"}, f"Material is used by {len(members)} structural members; unlink it first")
+            return {"CANCELLED"}
+        core.remove_material_set(tool.Ifc, tool.Material, material=material)
 
 
 class AssignMaterialToSelected(bpy.types.Operator, tool.Ifc.Operator):
@@ -257,6 +280,16 @@ class AssignMaterialToSelected(bpy.types.Operator, tool.Ifc.Operator):
     def _execute(self, context):
         material = tool.Ifc.get().by_id(self.material)
         objects = tool.Blender.get_selected_objects()
+        elements = [element for obj in objects if (element := tool.Ifc.get_entity(obj))]
+        if error := tool.Structural.validate_material_assignment(elements, material, material.is_a()):
+            self.report({"WARNING"}, error)
+            return {"CANCELLED"}
+        usages = {element: tool.Structural.get_type_profile_usages(element) for element in elements}
+        sections = {
+            element: bool(tool.Structural.get_member_sections(element))
+            for element in elements
+            if element.is_a("IfcStructuralCurveMember")
+        }
         core.assign_material(
             tool.Ifc,
             tool.Material,
@@ -265,6 +298,9 @@ class AssignMaterialToSelected(bpy.types.Operator, tool.Ifc.Operator):
             material=material,
             should_auto_assign_usage=self.should_auto_assign_usage,
         )
+        for element in elements:
+            tool.Structural.restore_type_profile_usages(element, usages[element])
+            tool.Structural.sync_material_assignment(element, restore_member_section=sections.get(element, False))
 
 
 class AssignMaterial(bpy.types.Operator, tool.Ifc.Operator):
@@ -289,7 +325,22 @@ class AssignMaterial(bpy.types.Operator, tool.Ifc.Operator):
 
     def _execute(self, context):
         objects = [bpy.data.objects.get(self.obj)] if self.obj else tool.Blender.get_selected_objects()
+        elements = [element for obj in objects if obj and (element := tool.Ifc.get_entity(obj))]
+        material_type = self.material_type or tool.Material.get_object_ui_material_type()
+        material = tool.Material.get_object_ui_active_material()
+        if error := tool.Structural.validate_material_assignment(elements, material, material_type):
+            self.report({"WARNING"}, error)
+            return {"CANCELLED"}
+        usages = {element: tool.Structural.get_type_profile_usages(element) for element in elements}
+        sections = {
+            element: bool(tool.Structural.get_member_sections(element))
+            for element in elements
+            if element.is_a("IfcStructuralCurveMember")
+        }
         core.assign_material(tool.Ifc, tool.Material, material_type=self.material_type, objects=objects)
+        for element in elements:
+            tool.Structural.restore_type_profile_usages(element, usages[element])
+            tool.Structural.sync_material_assignment(element, restore_member_section=sections.get(element, False))
 
 
 class UnassignMaterial(bpy.types.Operator, tool.Ifc.Operator):
@@ -308,6 +359,13 @@ class UnassignMaterial(bpy.types.Operator, tool.Ifc.Operator):
 
     def _execute(self, context):
         objects = [bpy.data.objects[self.obj]] if self.obj else tool.Blender.get_selected_objects()
+        members = set()
+        for obj in objects:
+            if element := tool.Ifc.get_entity(obj):
+                members.update(tool.Structural.get_members_affected_by_material_unassignment(element))
+        if members:
+            self.report({"WARNING"}, f"Material is used by {len(members)} structural members; unlink them first")
+            return {"CANCELLED"}
         core.unassign_material(tool.Ifc, tool.Material, objects=list(objects))
 
 
@@ -356,11 +414,20 @@ class AddProfile(bpy.types.Operator, tool.Ifc.Operator):
         obj = bpy.data.objects.get(self.obj) if self.obj else context.active_object
         assert obj
         self.file = tool.Ifc.get()
+        profile_set = self.file.by_id(self.profile_set)
+        members = {
+            member
+            for member in tool.Structural.get_members_using_material(profile_set)
+            if ifcopenshell.util.structural.get_building_elements(member)
+        }
+        if members:
+            self.report({"WARNING"}, f"Profile set is used by {len(members)} structural members; unlink them first")
+            return {"CANCELLED"}
         props = tool.Material.get_material_props()
         omprops = tool.Material.get_object_material_props(obj)
         ifcopenshell.api.material.add_profile(
             self.file,
-            profile_set=self.file.by_id(self.profile_set),
+            profile_set=profile_set,
             material=self.file.by_id(int(omprops.material)),
             profile=self.file.by_id(int(props.profiles)),
         )
@@ -835,6 +902,10 @@ class EditMaterialSetItem(bpy.types.Operator, tool.Ifc.Operator):
             slab.DumbSlabPlaner().regenerate_from_layer(layer)
             wall.DumbWallPlaner().regenerate_from_layer(layer)
         elif material.is_a("IfcMaterialProfileSet"):
+            products = ifcopenshell.util.element.get_elements_by_material(self.file, material) | {element}
+            if error := tool.Structural.validate_material_assignment(products, material, "IfcMaterialProfileSet"):
+                self.report({"WARNING"}, error)
+                return {"CANCELLED"}
             profile_def = None
             if mprops.profiles:
                 profile_def = tool.Ifc.get().by_id(int(mprops.profiles))
@@ -846,6 +917,7 @@ class EditMaterialSetItem(bpy.types.Operator, tool.Ifc.Operator):
                 profile_def=profile_def,
                 material=self.file.by_id(int(props.material_set_item_material)),
             )
+            tool.Structural.sync_profile_set(material, element)
         else:
             pass
 
