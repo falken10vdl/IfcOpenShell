@@ -84,8 +84,10 @@ class MaterialCreator:
         if element.is_a("IfcTypeProduct"):
             self.parse_element_type_material_styles(element)
         self.parsed_meshes.add(self.mesh.name)
-        if self.ifc_import_settings.load_indexed_maps:
-            self.load_texture_maps(shape_has_openings)
+        # Texture UV maps are always loaded: they only cost something when a
+        # texture style is actually present and textures render wrong without them.
+        # Indexed colour maps stay behind the load_indexed_maps setting.
+        self.load_texture_maps(shape_has_openings)
         self.assign_material_slots_to_faces()
         # On reimport (tool.Geometry.reimport_element_representations) obj still holds its old data
         # here - None if it was an EMPTY - and change_data() records the checksum once the new mesh is on.
