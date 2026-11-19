@@ -34,6 +34,7 @@ src/ifcopenshell-python/uv.lock
 .vscode
 !.vscode/launch.json
 !.vscode/tasks.json
+!.vscode/debugpy_port.py
 .vs
 /*.code-workspace
 
