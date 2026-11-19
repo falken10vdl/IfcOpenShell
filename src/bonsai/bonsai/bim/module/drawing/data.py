@@ -125,16 +125,20 @@ class DrawingsData:
     def location_hint(cls) -> list[tuple[tool.Drawing.LocationHintType, str, str]]:
         props = tool.Drawing.get_document_props()
         if props.target_view in ["PLAN_VIEW", "REFLECTED_PLAN_VIEW"]:
+            ifc = tool.Ifc.get()
             origin = ("0", "Origin", "")
-            if not (
-                storeys := [(str(s.id()), s.Name or "Unnamed", "") for s in tool.Ifc.get().by_type("IfcBuildingStorey")]
-            ):
-                return [origin]
+            storeys = [(str(s.id()), s.Name or "Unnamed", "") for s in ifc.by_type("IfcBuildingStorey")]
             default_container = tool.Root.get_default_container()
             if default_container and default_container.is_a("IfcBuildingStorey"):
                 default_id = str(default_container.id())
                 storeys.sort(key=lambda s: s[0] != default_id)
-            return storeys + [origin]
+            # Also offer non-storey spatial containers that directly contain elements (roads, sites, ...).
+            containers = [
+                (str(s.id()), f"{s.Name or 'Unnamed'} ({s.is_a()})", "")
+                for s in ifc.by_type("IfcSpatialStructureElement")
+                if not s.is_a("IfcBuildingStorey") and getattr(s, "ContainsElements", None)
+            ]
+            return storeys + containers + [origin]
         elif props.target_view in ["MODEL_VIEW"]:
             return [(h.upper(), h, "") for h in ["Orthographic", "Perspective"]]
         return [(h.upper(), h, "") for h in ["North", "South", "East", "West"]]
