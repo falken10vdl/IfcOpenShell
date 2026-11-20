@@ -623,7 +623,10 @@ class IfcCsv:
             if any(segment in SKIP_SEGMENTS for segment in key.lower().split(".")):
                 continue
 
-            ifcopenshell.util.selector.set_element_value(ifc_file, element, key, value, concat=concat)
+            try:
+                ifcopenshell.util.selector.set_element_value(ifc_file, element, key, value, concat=concat)
+            except ifcopenshell.util.selector.SetElementValueException as e:
+                print("Skipping column '{}' for element {}: {}".format(key, row[0], e))
 
 
 if __name__ == "__main__":
