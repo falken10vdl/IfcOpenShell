@@ -93,6 +93,7 @@ modules = {
     "web": None,
     "light": None,
     "alignment": None,
+    "terrain": None,
     "clip_box": None,
     "clipboard": None,
     # Uncomment this line to enable loading of the demo module. Happy hacking!
