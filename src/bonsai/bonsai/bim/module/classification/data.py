@@ -75,7 +75,9 @@ class ClassificationsData:
     def available_classifications(cls):
         if not IfcStore.classification_file:
             return []
-        return [(str(e.id()), e.Name, "") for e in IfcStore.classification_file.by_type("IfcClassification")]
+        return [
+            (str(e.id()), e.Name or "Unnamed", "") for e in IfcStore.classification_file.by_type("IfcClassification")
+        ]
 
     @classmethod
     def classification_source(cls) -> tool.Blender.BLENDER_ENUM_ITEMS:
@@ -131,7 +133,7 @@ class ReferencesData:
 
     @classmethod
     def classifications(cls):
-        return [(str(e.id()), e.Name, "") for e in tool.Ifc.get().by_type("IfcClassification")]
+        return [(str(e.id()), e.Name or "Unnamed", "") for e in tool.Ifc.get().by_type("IfcClassification")]
 
 
 class ObjectClassificationsData(ReferencesData):
