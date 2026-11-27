@@ -535,8 +535,12 @@ def ortho_view_frame(camera: bpy.types.Camera, margin: float = 20.0) -> tuple[fl
     props = tool.Drawing.get_camera_props(camera)
     aspect = props.raster_y / props.raster_x
     size = camera.ortho_scale
-    hwidth = size * 0.5
-    hheight = size * 0.5 * aspect
+    if aspect <= 1:
+        hwidth = size * 0.5
+        hheight = size * 0.5 * aspect
+    else:
+        hheight = size * 0.5
+        hwidth = size * 0.5 / aspect
     scale = parse_diagram_scale(camera)
     xmarg = min((margin / 1000) / scale, hwidth * 0.4)
     ymarg = min(xmarg * aspect, hheight * 0.4)
