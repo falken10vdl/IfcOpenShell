@@ -168,6 +168,7 @@ classes = (
     profile.SplitProfile,
     profile.PatchNonParametricMepSegment,
     roof.GenerateHippedRoof,
+    slab.ChangeSlabRotationXAngle,
     slab.DisableEditingExtrusionProfile,
     slab.DisableEditingSketchExtrusionProfile,
     slab.AddSlabFromWall,
