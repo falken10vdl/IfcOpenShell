@@ -129,6 +129,7 @@ def active_object_callback():
     update_spatial_tool_props()
     tool.Structural.follow_active_item_load()
     tool.Geometry.sync_item_positions()
+    tool.Geometry.sync_active_item_index()
 
 
 def update_spatial_tool_props():
