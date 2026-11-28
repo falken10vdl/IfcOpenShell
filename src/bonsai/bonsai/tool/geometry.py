@@ -1790,6 +1790,9 @@ class Geometry(bonsai.core.tool.Geometry):
 
     @classmethod
     def get_representation_item(cls, obj: bpy.types.Object) -> Union[ifcopenshell.entity_instance, None]:
+        if not obj:
+            return None
+
         data = obj.data
         if not isinstance(data, Geometry.TYPES_WITH_MESH_PROPERTIES):
             return None
